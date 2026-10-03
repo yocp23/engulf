@@ -2172,6 +2172,76 @@ const twin = {
   core: BALL_CORE.clone(), rim: BALL_RIM.clone(), boost: 1, frozenT: 0, wasFrozen: false, predict: null,
 };
 const balls = [ball, twin];
+// The two halves of a split ball merging, drawn as ONE liquid surface: a ray-marched smooth union of two
+// spheres. While they are apart the union is just two balls; the moment they touch a bridge opens between
+// them and they flow together like water droplets, then the merged drop wobbles long/flat before it settles.
+const blobU = {
+  uC1: { value: V() }, uC2: { value: V() }, uR1: { value: 1 }, uR2: { value: 1 }, uK: { value: 0.01 },
+  uAxis: { value: V(1, 0, 0) }, uS: { value: 1 }, uTime: { value: 0 }, uWobble: { value: 0.3 }, uHeat: { value: 0 },
+  uCore: { value: new THREE.Color() }, uRim: { value: new THREE.Color() }, uProj: { value: new THREE.Matrix4() },
+};
+const blobMat = new THREE.ShaderMaterial({
+  uniforms: blobU, side: THREE.BackSide,
+  vertexShader: `
+    varying vec3 vW;
+    void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+  fragmentShader: `
+    uniform vec3 uC1, uC2, uAxis, uCore, uRim; uniform float uR1, uR2, uK, uS, uTime, uWobble, uHeat; uniform mat4 uProj;
+    varying vec3 vW;
+    float wob(vec3 p){
+      return sin(p.x * 3.1 + uTime * 2.3) * sin(p.y * 2.7 - uTime * 1.9) * sin(p.z * 3.3 + uTime * 2.9)
+           + 0.5 * sin(p.x * 6.3 - uTime * 3.7 + p.z * 4.1) * sin(p.y * 5.9 + uTime * 3.1);
+    }
+    float smin(float a, float b, float k){ float h = max(k - abs(a - b), 0.0) / k; return min(a, b) - h * h * k * 0.25; }
+    float bigR(){ return max(uR1, uR2); }
+    // stretch along the merge axis while keeping the volume: long one moment, flat the next
+    vec3 warp(vec3 p){
+      vec3 q = p - uC1; float a = dot(q, uAxis); vec3 perp = q - uAxis * a;
+      return uC1 + uAxis * (a / uS) + perp * sqrt(uS);
+    }
+    float map(vec3 p){
+      vec3 q = warp(p);
+      float d = smin(length(q - uC1) - uR1, length(q - uC2) - uR2, max(uK, 0.001));
+      d -= wob((q - uC1) / bigR()) * 0.035 * uWobble * bigR();
+      return d * min(uS, inversesqrt(uS)) * 0.8;
+    }
+    void main(){
+      vec3 ro = cameraPosition, rd = normalize(vW - cameraPosition);
+      vec3 mid = (uC1 + uC2) * 0.5;
+      float bound = length(uC2 - uC1) * 0.5 + bigR() * 1.8, dm = length(ro - mid);
+      float t = max(0.0, dm - bound), tmax = dm + bound;
+      bool hit = false;
+      for (int i = 0; i < 110; i++) {
+        float d = map(ro + rd * t);
+        if (d < 0.001 + t * 0.0012) { hit = true; break; }
+        t += d;
+        if (t > tmax) break;
+      }
+      if (!hit) discard;
+      vec3 p = ro + rd * t;
+      vec2 e = vec2(0.004, 0.0);
+      vec3 N = normalize(vec3(map(p + e.xyy) - map(p - e.xyy), map(p + e.yxy) - map(p - e.yxy), map(p + e.yyx) - map(p - e.yyx)));
+      // same skin as the ball: swirling core, dark veins as it feeds, glowing rim
+      vec3 vP = (warp(p) - uC1) / bigR();
+      float fres = pow(1.0 - clamp(dot(N, -rd), 0.0, 1.0), 2.2);
+      float sw = sin(vP.y * 7.0 + sin(vP.x * 4.0 + uTime * 2.6) * 1.8 + uTime * 3.2) * 0.5 + 0.5;
+      float vein = smoothstep(0.55, 1.0, sin(vP.x * 9.0 + vP.z * 7.0 + sin(vP.y * 6.0 - uTime * 2.0) * 2.0 + uTime * 1.5) * 0.5 + 0.5);
+      vec3 col = uCore * (0.7 + sw * 0.45);
+      col = mix(col, uCore * 0.06, vein * uHeat * 0.85);
+      col += uRim * fres * (1.5 + uHeat);
+      // a wet highlight so it reads as liquid
+      vec3 Ld = normalize(vec3(0.35, 0.85, 0.4));
+      float spec = pow(max(dot(reflect(rd, N), Ld), 0.0), 48.0);
+      col += vec3(1.0, 0.95, 0.85) * spec * 1.6;
+      gl_FragColor = vec4(col, 1.0);
+      vec4 clip = uProj * viewMatrix * vec4(p, 1.0);
+      gl_FragDepth = clip.z / clip.w * 0.5 + 0.5;
+    }`,
+});
+const blobMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), blobMat);
+blobMesh.visible = false; blobMesh.frustumCulled = false; blobMesh.renderOrder = 5;
+scene.add(blobMesh);
+const MERGE_T = 1.25;   // extra cutscene time a split ball spends flowing back together
 const split = { r: BALL_R0, speed: 16 };   // the ball's size and speed before it split
 let serialCtr = 0;                          // every flight of either ball gets its own number
 // Frost Lock: a faceted ice shell around each ball
@@ -2784,12 +2854,18 @@ function ballVisuals(dt, rdt) {
     b.vr = b.radius; b.squash.set(1, 1, 1);
     ballU.uWobble.value = 0.25 + ballU.uHeat.value * 0.5; ballU.uOpacity.value = 1; ballU.uPull.value = 0;
   }
+  ballMesh.visible = !blobMesh.visible;
+  if (blobMesh.visible) {
+    blobU.uTime.value = ballU.uTime.value; blobU.uHeat.value = ballU.uHeat.value;
+    blobU.uCore.value.copy(b.core); blobU.uRim.value.copy(b.rim);
+    blobU.uProj.value.copy(camera.projectionMatrix);
+  }
   ballMesh.position.copy(b.pos);
   ballMesh.scale.set(b.vr * b.squash.x, b.vr * b.squash.y, b.vr * b.squash.z);
   ballMat.depthWrite = ballU.uOpacity.value > 0.98;
   ballLight.position.copy(b.pos); ballLight.color.copy(b.rim); ballLight.intensity = 6 + b.vr * 5;
   const on = twin.state !== 'off';
-  twinMesh.visible = on; twinLight.intensity = on ? 4 + twin.vr * 4 : 0;
+  twinMesh.visible = on && !blobMesh.visible; twinLight.intensity = on ? 4 + twin.vr * 4 : 0;
   if (on) {
     ballLook(twin, rdt);
     twinU.uTime.value = ballU.uTime.value + 3.7;
@@ -2845,7 +2921,10 @@ function beginCine(P) {
     camDist: 6 + rBig * 2.2, camPos: V(), look: P.from.clone(), pullDir: V(),
     tw: P.tw ? { from: P.tw.pos.clone(), r: P.tw.r } : null,
   };
+  c.G = c.tw ? MERGE_T : 0;
   if (c.tw) {
+    c.rC = Math.cbrt(c.r0 ** 3 + c.tw.r ** 3);   // same volume, one drop
+    c.oldSize = c.rC * 2;
     // frame both halves: swing the camera to the side the other half comes from and back off a little
     c.camDist += 3.5 + Math.min(6, c.tw.from.distanceTo(c.center) * 0.3);
     c.camAng = Math.atan2(c.tw.from.x - c.center.x, c.tw.from.z - c.center.z) + P.side * 1.45;
@@ -2867,16 +2946,21 @@ function beginCine(P) {
 function updateCine(rdt) {
   const c = game.cine, v = c.victim, b = ball;
   c.t += rdt;
-  const t = c.t;
-  c.w = smooth(0, 0.6, t) * (1 - smooth(2.95, 3.75, t));
-  const s = smooth(0, 0.16, t) * (1 - smooth(2.95, 3.6, t));
+  const t = c.t, G = c.G;
+  c.w = smooth(0, 0.6, t) * (1 - smooth(2.95 + G, 3.75 + G, t));
+  const s = smooth(0, 0.16, t) * (1 - smooth(2.95 + G, 3.6 + G, t));
   game.timeScale = lerp(1, 0.05, s);
   game.slow = s;
   c.camAng += rdt * 0.3;
-  c.camPos.set(c.center.x + Math.sin(c.camAng) * c.camDist, Math.max(0.8, c.center.y + 0.7 + c.rBig * 0.35), c.center.z + Math.cos(c.camAng) * c.camDist);
+  // for a split ball the camera leans in close while the two halves flow together
+  const close = c.tw ? smooth(2.15, 2.55, t) * (1 - smooth(2.2 + G, 2.7 + G, t)) : 0;
+  const camD = lerp(c.camDist, 2.6 + c.rC * 4.2, close);
+  const camH = lerp(Math.max(0.8, c.center.y + 0.7 + c.rBig * 0.35), b.pos.y + c.rC * 0.9, close);
+  c.camPos.set(c.center.x + Math.sin(c.camAng) * camD, camH, c.center.z + Math.cos(c.camAng) * camD);
   tmp1.lerpVectors(c.center, b.pos, 0.5);
   // keep the incoming half of a split ball in the shot
   if (c.tw && twin.state === 'merging') tmp1.lerp(twin.pos, 0.35);
+  if (close > 0) tmp1.lerp(blobMesh.visible ? blobMesh.position : b.pos, close);
   c.look.lerp(tmp1, damp(8, rdt));
 
   // ball: reach out, wrap around, turn see-through, gulp, then swell to its new size
@@ -2890,14 +2974,14 @@ function updateCine(rdt) {
   b.squash.set(1, 1, 1);
   if (t >= 2.0) {
     const g = smooth(2.0, 2.3, t), sq = Math.sin(g * Math.PI);
-    r = lerp(c.rBig, c.r0 * 0.72, g);
+    r = lerp(c.rBig, c.tw ? c.r0 : c.r0 * 0.72, g);
     b.squash.set(1 + sq * 0.16, 1 - sq * 0.26, 1 + sq * 0.16);
   }
-  if (t >= 2.3) {
-    const e = clamp((t - 2.3) / 0.75, 0, 1);
-    r = lerp(c.r0 * 0.72, c.rNew, elasticOut(e));
+  if (t >= 2.3 + G) {
+    const e = clamp((t - 2.3 - G) / 0.75, 0, 1);
+    r = lerp(c.tw ? c.rC : c.r0 * 0.72, c.rNew, elasticOut(e));
     b.squash.set(1, 1, 1);
-    b.pos.y = lerp(c.center.y, Math.max(c.center.y, c.rNew + 0.5), smooth(2.3, 2.9, t));
+    b.pos.y = lerp(c.center.y, Math.max(c.center.y, c.rNew + 0.5), smooth(2.3 + G, 2.9 + G, t));
   }
   b.vr = Math.max(0.05, r);
 
@@ -2914,7 +2998,7 @@ function updateCine(rdt) {
     v.tag.visible = v.kind !== 'local' && t < 0.5;
   }
   if (t > 0.6 && t < 2.0) for (let i = 0; i < 4; i++) emitSpiral(c);
-  if (c.tw && twin.state === 'merging') mergeStep(c, t, rdt);
+  if (c.tw && twin.state === 'merging') mergeStep(c, t);
 
   const once = (k, at, fn) => { if (t >= at && !c.fired[k]) { c.fired[k] = true; fn(); } };
   once('name', 0.2, () => caption('Engulfed', v.display, '', v.color));
@@ -2924,7 +3008,7 @@ function updateCine(rdt) {
     sfx.gulp();
     burst(b.pos, v.color, 40, 6, 0.6, true, 0.28);
   });
-  once('grow', 2.3, () => {
+  once('grow', 2.3 + G, () => {
     sfx.grow();
     game.shake = Math.max(game.shake, 0.5);
     shockwave(b.pos, b.rim, 13, 0.9, true);
@@ -2933,51 +3017,66 @@ function updateCine(rdt) {
       `Ø ${c.oldSize.toFixed(2)} → ${(c.rNew * 2).toFixed(2)} m · ${c.oldSpeed.toFixed(1)} → ${c.newSpeed.toFixed(1)} m/s`, null);
   });
   if (c.tw) {
-    once('stretch', 1.45, () => sfx.stretch());
-    once('merge', 2.12, () => {
+    // the bridge snaps open the instant they touch; a ring of spray where the surfaces met
+    once('touch', 2.6, () => {
       sfx.merge();
-      const col = new THREE.Color(ABILITY_BY_ID.split.color);
-      burst(b.pos, col, 40, 7, 0.6, true, 0.24);
-      shockwave(b.pos, col, 8, 0.7, true);
+      tmp2.lerpVectors(b.pos, twin.pos, c.r0 / (c.r0 + c.tw.r));
+      burst(tmp2, b.rim, 26, 5, 0.5, true, 0.16);
     });
+    once('settle', 2.3 + 0.9, () => { sfx.stretch(); shockwave(b.pos, b.rim, 7, 0.6, true); });
   }
-  once('bars', 2.95, () => { document.body.classList.remove('cine'); caption(null); });
-  if (t >= 3.8) endCine(false);
+  once('bars', 2.95 + G, () => { document.body.classList.remove('cine'); caption(null); });
+  if (t >= 3.8 + G) endCine(false);
 }
-// Splitting Slash, in the cutscene: the other half glides over, both reach for each other like two
-// water droplets, the neck between them fattens, and it pours into the ball just before it swells
-function mergeStep(c, t, rdt) {
-  const b = ball, tw = c.tw;
-  // glide in until the two surfaces kiss, hang there while the necks reach, then pour in
-  const k = smooth(0.3, 1.7, t), e = k * k * (3 - 2 * k);
-  tmp3.subVectors(tw.from, b.pos);
-  if (tmp3.lengthSq() < 1e-6) tmp3.set(1, 0, 0);
-  tmp3.normalize().multiplyScalar((b.vr + tw.r) * 0.9).add(b.pos);
-  tmp1.lerpVectors(tw.from, tmp3, e);
-  tmp1.y += Math.sin(k * Math.PI) * (1.2 + tw.r);
-  twin.pos.copy(tmp1);
-  const absorb = smooth(1.95, 2.4, t);
-  twin.vr = Math.max(0.02, tw.r * (1 - absorb * absorb));
-  if (absorb > 0) twin.pos.lerp(b.pos, absorb * absorb);
-  tmp2.subVectors(b.pos, twin.pos);
-  const d = tmp2.length();
-  if (d > 1e-4) tmp2.divideScalar(d); else tmp2.set(0, 1, 0);
-  const gap = d - b.vr - twin.vr, near = clamp(1 - gap / ((b.vr + twin.vr) * 1.6), 0, 1);
-  const neck = near * near * (1 - absorb);
-  twinU.uPullDir.value.copy(tmp2);
-  twinU.uPull.value = neck * (0.5 + gap * 0.25 / Math.max(twin.vr, 0.1) + 0.6);
-  twinU.uWobble.value = 0.4 + neck * 1.4 + absorb * 1.5;
-  twinU.uOpacity.value = 1 - absorb * 0.6;
-  if (t > 0.75) {
-    ballU.uPullDir.value.copy(tmp2).negate();
-    ballU.uPull.value = Math.max(ballU.uPull.value, neck * (0.7 + Math.max(gap, 0) * 0.3 / Math.max(b.vr, 0.1)));
-    ballU.uWobble.value += absorb * (1 - absorb) * 3;
+// Splitting Slash, in the cutscene. While the ball swallows its victim the other half drifts over and waits
+// beside it; then, like two droplets: it glides in, the surfaces touch, a liquid bridge snaps open and
+// widens fast, the two pull into one drop (same volume), and that drop wobbles long-flat-long and settles.
+function mergeStep(c, t) {
+  const b = ball, tw = c.tw, rt = tw.r;
+  const axis = c.mAxis || (c.mAxis = V());
+  axis.subVectors(tw.from, b.pos); axis.y *= 0.25;
+  if (axis.lengthSq() < 1e-6) axis.set(1, 0, 0);
+  axis.normalize();
+  const waitD = c.rBig + rt + 1.1;
+  if (t < 2.3) {
+    const k = smooth(0.3, 2.15, t), e = k * k * (3 - 2 * k);
+    tmp1.copy(b.pos).addScaledVector(axis, waitD);
+    twin.pos.lerpVectors(tw.from, tmp1, e);
+    twin.pos.y += Math.sin(k * Math.PI) * (1.2 + rt);
+    twin.vr = rt;
+    blobMesh.visible = false;
+    return;
   }
-  if (absorb >= 1) twin.state = 'off';
+  const m = t - 2.3, r1 = c.r0, touch = r1 + rt;
+  const a = clamp(m / 0.3, 0, 1);
+  let D = lerp(waitD, touch * 0.98, a * a);                              // glide in, speeding up
+  const tc = m - 0.3;
+  const bridge = tc > 0 ? Math.sqrt(clamp(tc / 0.24, 0, 1)) : 0;          // the neck opens fast, then slows
+  const cv = smooth(0.4, 0.92, m);                                        // centres pull together
+  D *= 1 - cv;
+  const R1 = lerp(r1, c.rC, cv), R2 = lerp(rt, c.rC, cv);
+  const tau = m - 0.8;
+  const st = tau > 0 ? 1 + 0.32 * Math.exp(-2.6 * tau) * Math.cos(10 * tau) : 1 + 0.32 * smooth(0.45, 0.8, m);
+  blobU.uC1.value.copy(b.pos);
+  blobU.uC2.value.copy(b.pos).addScaledVector(axis, D);
+  blobU.uR1.value = R1; blobU.uR2.value = R2;
+  blobU.uK.value = lerp(0.015, 1.3 * Math.min(r1, rt), bridge);
+  blobU.uAxis.value.copy(axis);
+  blobU.uS.value = st;
+  blobU.uWobble.value = 0.4 + 0.7 * bridge * (1 - smooth(0.85, MERGE_T, m));
+  twin.pos.copy(blobU.uC2.value); twin.vr = R2;
+  const done = m >= MERGE_T - 0.01;
+  blobMesh.visible = !done;
+  if (!done) {
+    const bound = D * 0.5 + Math.max(R1, R2) * 1.8;
+    blobMesh.position.lerpVectors(blobU.uC1.value, blobU.uC2.value, 0.5);
+    blobMesh.scale.setScalar(bound * 2.02);
+  } else twin.state = 'off';
 }
 function endCine(interrupted) {
   const c = game.cine, v = c.victim;
   if (twin.state === 'merging') twin.state = 'off';
+  blobMesh.visible = false;
   game.cine = null; game.timeScale = 1; game.slow = 0;
   document.body.classList.remove('cine');
   caption(null);
