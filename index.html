@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Engulf</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -31,6 +31,10 @@
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 html,body{height:100%;margin:0;overflow:hidden;background:var(--void);color:var(--sand);font-family:var(--ui);font-size:15px;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+/* no double-tap or pinch zoom anywhere: fast tapping on phones must never zoom the page */
+html,body{touch-action:manipulation;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body:not(.menu){-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+#touchUI,#top,.hud{touch-action:none}
 #c{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;outline:none}
 .hud{position:fixed;pointer-events:none;z-index:4;transition:opacity .35s}
 button{font-family:var(--ui)}
@@ -3803,6 +3807,21 @@ addEventListener('mousemove', e => { if (locked) look(e.movementX || 0, e.moveme
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 addEventListener('pointerdown', () => sfx.init());
 
+// Phones: stop the page from zooming. iOS ignores user-scalable=no, so also block its pinch gestures and
+// a second tap that lands soon after the first (double-tap zoom); text fields are left alone.
+{
+  const vp = document.querySelector('meta[name="viewport"]');
+  if (vp) vp.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover');
+  for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(ev, e => e.preventDefault(), { passive: false });
+  document.addEventListener('dblclick', e => e.preventDefault(), { passive: false });
+  let lastTouchEnd = 0;
+  document.addEventListener('touchend', e => {
+    const now = performance.now();
+    if (now - lastTouchEnd < 350 && !e.target.closest('input, textarea, select')) e.preventDefault();
+    lastTouchEnd = now;
+  }, { passive: false });
+  document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+}
 // touch controls grow with the screen: about 1.15x on phones, up to 1.75x on tablets
 let touchScale = 1.15;
 function sizeTouch() {
