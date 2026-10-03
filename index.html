@@ -2242,6 +2242,7 @@ const blobMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), blobMat);
 blobMesh.visible = false; blobMesh.frustumCulled = false; blobMesh.renderOrder = 5;
 scene.add(blobMesh);
 const MERGE_T = 1.4;   // extra cutscene time a split ball spends flowing back together
+const T_GLIDE = 2.7, T_TOUCH = 3.25, MERGE_END = 4.25;   // the merge, after the eater has grown
 const split = { r: BALL_R0, speed: 16 };   // the ball's size and speed before it split
 let serialCtr = 0;                          // every flight of either ball gets its own number
 // Frost Lock: a faceted ice shell around each ball
@@ -2924,7 +2925,9 @@ function beginCine(P) {
   };
   c.G = c.tw ? MERGE_T : 0;
   if (c.tw) {
-    c.rC = Math.cbrt(c.r0 ** 3 + c.tw.r ** 3);   // same volume, one drop
+    c.rC = Math.cbrt(c.r0 ** 3 + c.tw.r ** 3);   // both halves before the meal
+    // the eater grows first, to the size that becomes the final ball once the small half has joined
+    c.rEat = Math.cbrt(Math.max(c.rNew ** 3 - c.tw.r ** 3, c.r0 ** 3));
     c.oldSize = c.rC * 2;
     // frame both halves: swing the camera to the side the other half comes from and back off a little
     c.camDist += 3.5 + Math.min(6, c.tw.from.distanceTo(c.center) * 0.3);
@@ -2954,7 +2957,7 @@ function updateCine(rdt) {
   game.slow = s;
   c.camAng += rdt * 0.3;
   // for a split ball the camera leans in close while the two halves flow together
-  const close = c.tw ? smooth(2.15, 2.55, t) * (1 - smooth(2.2 + G, 2.7 + G, t)) : 0;
+  const close = c.tw ? smooth(2.65, 3.05, t) * (1 - smooth(4.2, 4.8, t)) : 0;
   const camD = lerp(c.camDist, 2.6 + c.rC * 4.2, close);
   const camH = lerp(Math.max(0.8, c.center.y + 0.7 + c.rBig * 0.35), b.pos.y + c.rC * 0.9, close);
   c.camPos.set(c.center.x + Math.sin(c.camAng) * camD, camH, c.center.z + Math.cos(c.camAng) * camD);
@@ -2978,11 +2981,13 @@ function updateCine(rdt) {
     r = lerp(c.rBig, c.tw ? c.r0 : c.r0 * 0.72, g);
     b.squash.set(1 + sq * 0.16, 1 - sq * 0.26, 1 + sq * 0.16);
   }
-  if (t >= 2.3 + G) {
-    const e = clamp((t - 2.3 - G) / 0.75, 0, 1);
-    r = lerp(c.tw ? c.rC : c.r0 * 0.72, c.rNew, elasticOut(e));
+  if (t >= 2.3) {
+    // swell after the meal; a split half swells to its share, and the other half tops it up after
+    const e = clamp((t - 2.3) / 0.75, 0, 1);
+    r = lerp(c.tw ? c.r0 : c.r0 * 0.72, c.tw ? c.rEat : c.rNew, elasticOut(e));
+    if (c.tw && t >= MERGE_END) r = c.rNew;
     b.squash.set(1, 1, 1);
-    b.pos.y = lerp(c.center.y, Math.max(c.center.y, c.rNew + 0.5), smooth(2.3 + G, 2.9 + G, t));
+    b.pos.y = lerp(c.center.y, Math.max(c.center.y, c.rNew + 0.5), smooth(2.3, 2.9, t));
   }
   b.vr = Math.max(0.05, r);
 
@@ -3009,7 +3014,7 @@ function updateCine(rdt) {
     sfx.gulp();
     burst(b.pos, v.color, 40, 6, 0.6, true, 0.28);
   });
-  once('grow', 2.3 + G, () => {
+  once('grow', 2.3, () => {
     sfx.grow();
     game.shake = Math.max(game.shake, 0.5);
     shockwave(b.pos, b.rim, 13, 0.9, true);
@@ -3019,12 +3024,12 @@ function updateCine(rdt) {
   });
   if (c.tw) {
     // the bridge snaps open the instant they touch; a ring of spray where the surfaces met
-    once('touch', 2.75, () => {
+    once('touch', T_TOUCH, () => {
       sfx.merge();
       tmp2.lerpVectors(b.pos, twin.pos, c.r0 / (c.r0 + c.tw.r));
       burst(tmp2, b.rim, 26, 5, 0.5, true, 0.16);
     });
-    once('settle', 3.3, () => { sfx.stretch(); shockwave(b.pos, b.rim, 7, 0.6, true); });
+    once('settle', 3.8, () => { sfx.stretch(); shockwave(b.pos, b.rim, 7, 0.6, true); });
   }
   once('bars', 2.95 + G, () => { document.body.classList.remove('cine'); caption(null); });
   if (t >= 3.8 + G) endCine(false);
@@ -3033,41 +3038,40 @@ function updateCine(rdt) {
 // the other half hangs back. Then, after the gulp, the other half glides in and they merge like two water
 // droplets: the surfaces touch, a liquid bridge snaps open and widens, the two pull into one drop of the
 // same volume, and that drop wobbles long-flat-long before it settles.
-const T_TOUCH = 2.75;
 function mergeStep(c, t) {
   const b = ball, tw = c.tw, rt = tw.r;
   const axis = c.mAxis || (c.mAxis = V());
   axis.subVectors(tw.from, b.pos); axis.y *= 0.25;
   if (axis.lengthSq() < 1e-6) axis.set(1, 0, 0);
   axis.normalize();
-  // where it hangs back while the eating happens: part of the way over, well clear of the ball
-  tmp1.copy(b.pos).addScaledVector(axis, c.rBig + rt + 2.2);
+  // where it hangs back while the eating and growing happen: part of the way over, well clear of the ball
+  tmp1.copy(b.pos).addScaledVector(axis, Math.max(c.rBig, c.rEat) + rt + 2.2);
   const hold = tmp3.lerpVectors(tw.from, tmp1, 0.6 * smooth(0.2, 2.0, t));
   hold.y += Math.sin(t * 2.2) * 0.12;
-  const touch = c.r0 + rt;
+  const touch = b.vr + rt;
   if (t < T_TOUCH) {
-    // after the gulp it glides in, speeding up, until the two surfaces meet
-    const a = smooth(2.0, T_TOUCH, t);
+    // once the eater has grown, the small half glides in, speeding up, until the two surfaces meet
+    const a = smooth(T_GLIDE, T_TOUCH, t);
     tmp2.copy(b.pos).addScaledVector(axis, touch * 0.98);
     twin.pos.lerpVectors(hold, tmp2, a * a);
     twin.vr = rt;
-    if (t < 2.3) { blobMesh.visible = false; return; }
+    if (t < T_GLIDE + 0.25) { blobMesh.visible = false; return; }
   }
   const bridge = Math.sqrt(clamp((t - T_TOUCH) / 0.24, 0, 1));          // the neck opens fast, then slows
-  const cv = smooth(2.85, 3.35, t);                                       // centres pull together
+  const cv = smooth(T_TOUCH + 0.1, T_TOUCH + 0.6, t);                     // centres pull together
   const C2 = blobU.uC2.value;
   if (t < T_TOUCH) C2.copy(twin.pos); else C2.copy(b.pos).addScaledVector(axis, touch * 0.98 * (1 - cv));
-  const R1 = lerp(c.r0, c.rC, cv), R2 = lerp(rt, c.rC, cv);
-  const tau = t - 3.25;
-  const st = tau > 0 ? 1 + 0.32 * Math.exp(-2.6 * tau) * Math.cos(10 * tau) : 1 + 0.32 * smooth(2.95, 3.25, t);
+  const R1 = lerp(b.vr, c.rNew, cv), R2 = lerp(rt, c.rNew, cv);
+  const tau = t - (T_TOUCH + 0.5);
+  const st = tau > 0 ? 1 + 0.32 * Math.exp(-2.6 * tau) * Math.cos(10 * tau) : 1 + 0.32 * smooth(T_TOUCH + 0.2, T_TOUCH + 0.5, t);
   blobU.uC1.value.copy(b.pos);
   blobU.uR1.value = R1; blobU.uR2.value = R2;
   blobU.uK.value = lerp(0.015, 1.3 * Math.min(c.r0, rt), bridge);
   blobU.uAxis.value.copy(axis);
   blobU.uS.value = st;
-  blobU.uWobble.value = 0.4 + 0.7 * bridge * (1 - smooth(3.3, 2.3 + MERGE_T, t));
+  blobU.uWobble.value = 0.4 + 0.7 * bridge * (1 - smooth(3.8, MERGE_END, t));
   twin.pos.copy(C2); twin.vr = R2;
-  const done = t >= 2.3 + MERGE_T - 0.01;
+  const done = t >= MERGE_END;
   blobMesh.visible = !done;
   if (!done) {
     const D = C2.distanceTo(b.pos), bound = D * 0.5 + Math.max(R1, R2) * 1.8;
