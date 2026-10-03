@@ -266,6 +266,17 @@ button.wcard:hover{transform:translateY(-2px)}
 #tDash span{color:var(--sand);max-width:80%;line-height:1.05}
 #tDash svg{width:calc(24px * var(--tu));height:calc(24px * var(--tu))}
 body.menu #touchUI,body.panel #touchUI{visibility:hidden}
+#touchUI .tbtn{opacity:var(--to,1)}
+/* editing the touch layout: the buttons show over everything and can be dragged */
+body.touch-edit #touchUI{visibility:visible!important;opacity:1!important;z-index:25}
+body.touch-edit #menu,body.touch-edit #end,body.touch-edit #top{visibility:hidden}
+body.touch-edit .tbtn{outline:2px dashed rgba(243,230,200,.7);outline-offset:5px;cursor:move}
+#tePanel{position:fixed;top:calc(env(safe-area-inset-top,0px) + 10px);left:50%;transform:translateX(-50%);z-index:30;width:min(360px,calc(100vw - 32px));display:flex;flex-direction:column;gap:6px;pointer-events:auto;padding:12px 14px}
+#tePanel b{font-family:var(--display);font-weight:400;font-size:18px;color:var(--sand)}
+#tePanel .note{margin:0;font-size:12.5px}
+#tePanel .row{gap:8px;justify-content:flex-end}
+#touchEditBtn{margin-top:6px}
+@media (max-height:440px){#tePanel{width:min(300px,calc(100vw - 32px));padding:8px 12px;gap:0}#tePanel .note{display:none}#tePanel b{font-size:15px}}
 @media (pointer:coarse){
   .touch-only{display:block}
   ul.touch-only{display:grid}
@@ -331,6 +342,14 @@ body.menu #touchUI,body.panel #touchUI{visibility:hidden}
 </div>
 
 <div class="hud" id="abil"><div id="abilRing"><span id="abilIcon"></span></div><span class="lbl"><kbd>Shift</kbd><span id="abilName">Dash</span></span></div>
+
+<div class="panel" id="tePanel" hidden>
+  <b>Touch controls</b>
+  <p class="note">Drag the Parry, Jump and ability buttons wherever suits your thumbs.</p>
+  <div class="vol-row"><label for="teSize">Size</label><input type="range" id="teSize" min="70" max="160" step="5"><output for="teSize"></output></div>
+  <div class="vol-row"><label for="teOp">Opacity</label><input type="range" id="teOp" min="30" max="100" step="5"><output for="teOp"></output></div>
+  <div class="row"><button class="chipbtn" id="teReset" type="button">Reset</button><button class="btn cyan small" id="teDone" type="button">Done</button></div>
+</div>
 
 <div id="touchUI" class="touch-only">
   <div id="joy" hidden><div id="knob"></div></div>
@@ -410,6 +429,7 @@ body.menu #touchUI,body.panel #touchUI{visibility:hidden}
           <li><kbd>Jump</kbd><span>Get out of the way</span></li>
           <li><kbd>Ability</kbd><span>Your equipped ability</span></li>
         </ul>
+        <button class="chipbtn touch-only" id="touchEditBtn" type="button">Customize touch controls</button>
       </div>
     </div>
   </div>
@@ -492,7 +512,7 @@ const GRAVITY = 26;
 const FOV = 62;
 const SHOULDER = 1.15;       // shift-lock camera offset to the right
 const SLOTS = 8;
-const PROTO = 4;             // online message format version
+const PROTO = 5;             // online message format version
 const START_COINS = 200;
 const EARN = { parry: 4, outlast: 8, round: 10, win: 120 };
 const WSCALE = 1.28;         // weapon size relative to its modelled size
@@ -1369,6 +1389,23 @@ const sfx = (() => {
         [2637, 3136, 3951, 4699].forEach((f, i) => tone({ f0: f, dur: 0.5, type: 'sine', vol: 0.05 * v, delay: i * 0.035 }));
         noise({ dur: 0.4, vol: 0.2 * v, type: 'highpass', f0: 6000, f1: 2500 });
         tone({ f0: 300, f1: 80, dur: 0.4, type: 'triangle', vol: 0.2 * v });
+      } else if (id === 'attract') {
+        tone({ f0: 90, f1: 380, dur: 0.5, type: 'sawtooth', vol: 0.05 * v, lp: 900 });
+        tone({ f0: 180, f1: 760, dur: 0.45, type: 'sine', vol: 0.08 * v });
+        noise({ dur: 0.5, vol: 0.06 * v, type: 'bandpass', f0: 2500, f1: 400, q: 6 });
+      } else if (id === 'phantom') {
+        noise({ dur: 0.6, vol: 0.1 * v, type: 'bandpass', f0: 3000, f1: 600, q: 1.2 });
+        tone({ f0: 880, f1: 1760, dur: 0.5, type: 'sine', vol: 0.03 * v });
+        tone({ f0: 1320, f1: 660, dur: 0.6, type: 'triangle', vol: 0.025 * v, delay: 0.08 });
+      } else if (id === 'warp') {
+        tone({ f0: 300, f1: 70, dur: 0.9, type: 'sawtooth', vol: 0.06 * v, lp: 700 });
+        tone({ f0: 55, dur: 1.0, type: 'sine', vol: 0.2 * v });
+        for (let i = 0; i < 6; i++) tone({ f0: 2000, dur: 0.03, type: 'square', vol: 0.02 * v, lp: 4000, delay: 0.1 + i * 0.16 });
+      } else if (id === 'tele') {
+        tone({ f0: 600, f1: 1800, dur: 0.25, type: 'sine', vol: 0.06 * v });
+        tone({ f0: 1200, f1: 2400, dur: 0.2, type: 'triangle', vol: 0.04 * v, delay: 0.05 });
+        noise({ dur: 0.15, vol: 0.12 * v, type: 'highpass', f0: 4000, delay: 0.12 });
+        tone({ f0: 140, f1: 50, dur: 0.25, type: 'sine', vol: 0.4 * v, bus: 'crunch', delay: 0.12 });
       } else if (id === 'shield') {
         [392, 494, 587, 784].forEach((f, i) => tone({ f0: f, dur: 0.7, type: 'triangle', vol: 0.06 * v, delay: i * 0.03, attack: 0.04 }));
         noise({ dur: 0.5, vol: 0.08 * v, type: 'highpass', f0: 5000, f1: 9000 });
@@ -1430,9 +1467,13 @@ const ABILITIES = [
   { id: 'dash', name: 'Dash', price: 0, cd: 1.2, color: '#47f0d7', desc: 'Burst forward the way you move.' },
   { id: 'leap', name: 'Sky Leap', price: 200, cd: 6, color: '#8fd3ff', desc: 'Rocket high into the air. The ball has to climb to reach you.' },
   { id: 'blink', name: 'Phantom Step', price: 350, cd: 7, color: '#b98cff', desc: 'Teleport 10 m the way you move and leave an afterimage behind.' },
+  { id: 'attract', name: 'Attract', price: 450, cd: 14, color: '#4f86ff', desc: 'Yank the nearest ball onto you. For 2.5 s your parries reach 50% further, so catch it and fire it where you want.' },
   { id: 'power', name: 'Power Slash', price: 500, cd: 10, color: '#ff5a2a', desc: 'A huge slash with double parry reach. The ball flies 40% faster until it reaches someone.' },
-  { id: 'freeze', name: 'Frost Lock', price: 650, cd: 16, color: '#7fe8ff', desc: 'Freeze every ball in ice for 1.5 seconds, wherever it is.' },
+  { id: 'phantom', name: 'Vanish', price: 550, cd: 15, color: '#a9b8ff', desc: 'Turn invisible for 4 s. Nobody can pick you as the next target, but a ball already on you keeps coming.' },
+  { id: 'freeze', name: 'Frost Lock', price: 650, cd: 16, color: '#7fe8ff', desc: 'Freeze every ball in ice for 1.5 s. If a frozen ball is after you, smash it out of the ice from anywhere.' },
+  { id: 'warp', name: 'Time Warp', price: 750, cd: 16, color: '#b4ff5a', desc: 'A 6 m bubble of slow time around you for 3.5 s. Balls crawl at a third of their speed inside it.' },
   { id: 'shield', name: 'Aegis', price: 800, cd: 18, color: '#ffd76a', desc: 'A golden dome that parries for you once in the next 1.5 seconds.' },
+  { id: 'tele', name: 'Telekinesis', price: 900, cd: 16, color: '#ff7eb6', desc: 'Grab a ball that is chasing someone else and fling it at the player you aim at, from anywhere.' },
   { id: 'split', name: 'Splitting Slash', price: 1000, cd: 18, color: '#ff3fd8', desc: 'A wide parry that splits the ball into two smaller, slower balls. They merge back once one of them gets someone.' },
 ];
 const ABILITY_BY_ID = Object.fromEntries(ABILITIES.map(a => [a.id, a]));
@@ -1446,8 +1487,13 @@ const AB_ICONS = {
   freeze: '<path d="M12 2v20M3.3 7l17.4 10M3.3 17L20.7 7"/><path d="M9.5 3.5L12 6l2.5-2.5M9.5 20.5L12 18l2.5 2.5"/>',
   shield: '<path d="M12 3l7.5 3v6c0 4.6-3.2 7.8-7.5 9-4.3-1.2-7.5-4.4-7.5-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
   split: '<path d="M12 21v-8M12 13L5.5 5.5M12 13l6.5-7.5"/><circle cx="5" cy="5" r="2.2"/><circle cx="19" cy="5" r="2.2"/>',
+  attract: '<path d="M6 3v8a6 6 0 0 0 12 0V3"/><path d="M6 7h4M14 7h4"/><path d="M12 21v-2"/>',
+  phantom: '<path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z"/><circle cx="12" cy="12" r="2.5"/><path d="M4 20L20 4"/>',
+  warp: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6"/>',
+  tele: '<path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11.5V4a1.5 1.5 0 0 1 3 0v8M14 11.5V6a1.5 1.5 0 0 1 3 0v8c0 4-2.5 7-6 7s-5-2-6.5-5L3 12.5a1.5 1.5 0 0 1 2.5-1.6L8 14"/><path d="M20 3l1 1M21 7h1"/>',
 };
 const abilityIcon = (id, size = 22) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${AB_ICONS[id] || AB_ICONS.dash}</svg>`;
+const PHANTOM_T = 4, WARP_T = 3.5, WARP_R = 6, WARP_SLOW = 0.33, CATCH_T = 2.5, CATCH_REACH = 1.5;
 const POWER_BOOST = 1.4, SPLIT_SIZE = 0.72, SPLIT_SPEED = 0.75, FREEZE_T = 1.5, SHIELD_T = 1.5;
 function rollRarity(odds) {
   let r = Math.random() * Object.values(odds).reduce((a, b) => a + b, 0);
@@ -1895,6 +1941,7 @@ class Fighter {
     this.pivots[0].position.fromArray(HAND_R); this.pivots[1].position.fromArray(HAND_L);
     for (const p of this.pivots) { p.rotation.order = 'YXZ'; const h = new THREE.Mesh(handGeo, this.headMat); h.castShadow = true; p.add(h); }
     this.model.add(body, head, visor, ...this.pivots);
+    this.body = body; this.head = head; this.visor = visor;
     this.tagCanvas = document.createElement('canvas'); this.tagCanvas.width = 320; this.tagCanvas.height = 84;
     this.tagTex = new THREE.CanvasTexture(this.tagCanvas); this.tagTex.colorSpace = THREE.SRGBColorSpace;
     this.tag = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.tagTex, depthWrite: false, transparent: true, fog: false }));
@@ -1910,6 +1957,7 @@ class Fighter {
     this.weaponId = null; this.weapon = WEAPON_BY_ID.starter; this.hands = [];
     this.swingCount = 0; this.swingT = 9; this.lastSwingT = 9; this.netFacing = 0; this.facing = 0; this.auraT = 0; this.auraHand = 0;
     this.ability = 'dash'; this.abCD = 0; this.abCount = 0; this.shieldT = 0; this.parryMode = 0; this.reachMul = 1;
+    this.ghostT = 0; this.ghostOn = 0; this.catchT = 0;
     this.group.visible = false;
   }
   configure({ kind, owner = null, name = '', weapon = 'starter', ability = 'dash' }) {
@@ -1926,6 +1974,18 @@ class Fighter {
     if (!this.active) { this.alive = false; this.group.visible = false; for (const t of this.trails) t.clear(); }
   }
   setName(n) { if (n !== this.name) { this.name = n; drawTag(this); } }
+  // Vanish: you see yourself as a faint ghost; everyone else sees almost nothing
+  applyGhost() {
+    const g = this.ghostT > 0 ? 1 : 0;
+    if (g === this.ghostOn) return;
+    this.ghostOn = g;
+    const mine = this.kind === 'local';
+    for (const m of [this.mat, this.headMat]) { m.transparent = !!g; m.opacity = g ? (mine ? 0.32 : 0.05) : 1; m.depthWrite = !g; m.needsUpdate = true; }
+    this.visor.visible = !g;
+    this.body.castShadow = this.head.castShadow = !g;
+    for (const h of this.hands) h.group.visible = !g || mine;
+    this.tag.visible = !g && this.kind !== 'local' && this.active;
+  }
   setWeapon(id) {
     id = cleanWeapon(id);
     if (id === this.weaponId) return;
@@ -1943,7 +2003,8 @@ class Fighter {
     this.facing = this.netFacing = Math.atan2(-x, -z); this.group.rotation.set(0, this.facing, 0);
     this.model.scale.set(1, 1, 1); this.model.rotation.set(0, 0, 0); this.model.position.set(0, 0, 0);
     this.parryWindow = 0; this.parryCD = 0; this.dashCD = 0; this.dashT = 0; this.swingT = 9; this.lastSwingT = 9;
-    this.abCD = 0; this.shieldT = 0; this.parryMode = 0; this.reachMul = 1;
+    this.abCD = 0; this.shieldT = 0; this.parryMode = 0; this.reachMul = 1; this.ghostT = 0; this.catchT = 0;
+    this.applyGhost();
     this.walk = 0; this.land = 0; this.think = 0; this.pace = 0.6; this.strafe = Math.random() < 0.5 ? 1 : -1;
     this.plan = 'none'; this.planSerial = -1; this.react = 0;
     this.mat.emissive.copy(this.color); this.mat.emissiveIntensity = 0.12;
@@ -1975,6 +2036,14 @@ class Fighter {
     this.parryCD = Math.max(0, this.parryCD - dt);
     this.abCD = Math.max(0, this.abCD - dt);
     if (this.shieldT > 0) this.shieldT = Math.max(0, this.shieldT - dt);
+    if (this.catchT > 0) this.catchT = Math.max(0, this.catchT - dt);
+    if (this.ghostT > 0) {
+      this.ghostT = Math.max(0, this.ghostT - dt);
+      // others only see the odd glint where an invisible player is
+      if (this.kind !== 'local' && Math.random() < dt * 6) emit({ x: this.pos.x + rand(-0.4, 0.4), y: this.pos.y + rand(0.3, 1.9), z: this.pos.z + rand(-0.4, 0.4), vx: 0, vy: 0.6, vz: 0,
+        life: 0.5, max: 0.5, s0: 0.12, s1: 0.02, r: 1.5, g: 1.7, b: 2.6, a: 0.7, drag: 0, grav: 0, real: false });
+    }
+    this.applyGhost();
     if (this.parryWindow > 0) {
       this.parryWindow -= dt;
       if (this.parryWindow <= 0) {
@@ -2068,11 +2137,11 @@ class Fighter {
     for (let i = subs - 1; i >= 0; i--) {
       this.applyPose(this.swingT - dt * i / subs);
       this.model.position.y = bob;
-      this.sampleTrails(game.gameTime - dt * i / subs, dash);
+      if (!(this.ghostT > 0 && this.kind !== 'local')) this.sampleTrails(game.gameTime - dt * i / subs, dash);
     }
     // the crescent slash wave starts when the blade begins to cut
     const prev = this.lastSwingT;
-    if (prev < 0.08 && this.swingT >= 0.08) spawnSlashWave(this, 0);
+    if (prev < 0.08 && this.swingT >= 0.08 && !(this.ghostT > 0 && this.kind !== 'local')) spawnSlashWave(this, 0);
     if (this.weapon.dual && prev < 0.08 + DUAL_LAG && this.swingT >= 0.08 + DUAL_LAG) spawnSlashWave(this, 1);
     this.lastSwingT = this.swingT;
     // blade glow flares during the slash; rainbow parts cycle their hue
@@ -2360,7 +2429,7 @@ const game = {
 const net = {
   room: null, claudeRoom: null, mode: 'solo', me: null, isHost: false, hostPeer: null, joinedAt: 0,
   lastHostPres: null, lastH: null, ball: null, twin: null,
-  pSeq: 0, myParry: null, myHit: -1, reported: new Set(), prSeen: new Map(), missing: new Map(), fzSeq: 0, fzSeen: new Map(),
+  pSeq: 0, myParry: null, myHit: -1, reported: new Set(), prSeen: new Map(), missing: new Map(), fzSeq: 0, fzSeen: new Map(), rqSeq: 0, rq: null, rqSeen: new Map(),
   rosterKey: '', rosterT: 0, presT: 0, seenDeflects: 0, seenCine: 0, seenWin: -1, lockFailed: false,
 };
 const camCtl = { yaw: 0, pitch: 0.22, dist: 8 };
@@ -2393,7 +2462,7 @@ function aimTarget() {
   let best = null, bestDot = -Infinity;
   const fx_ = -Math.sin(camCtl.yaw), fz = -Math.cos(camCtl.yaw);
   for (const f of fighters) {
-    if (!f.active || !f.alive || f === L) continue;
+    if (!f.active || !f.alive || f === L || f.ghostT > 0) continue;
     const dx = f.pos.x - L.pos.x, dz = f.pos.z - L.pos.z, d = Math.hypot(dx, dz) || 1;
     const dot = (dx * fx_ + dz * fz) / d;
     if (dot > bestDot) { bestDot = dot; best = f; }
@@ -2406,7 +2475,8 @@ function aimDir(out) {
   return out.normalize();
 }
 function botChooseTarget(p) {
-  const opts = fighters.filter(f => f.active && f.alive && f !== p);
+  let opts = fighters.filter(f => f.active && f.alive && f !== p && !(f.ghostT > 0));
+  if (!opts.length) opts = fighters.filter(f => f.active && f.alive && f !== p);   // only invisible players left
   if (!opts.length) return null;
   const w = opts.map(f => (f.kind === 'local' || f.kind === 'remote') ? D().focus : 1);
   let r = Math.random() * w.reduce((a, b) => a + b, 0);
@@ -2448,6 +2518,7 @@ function placeAll() {
   act.forEach((f, i) => { const a = Math.PI / 2 + i / act.length * TAU, r = arenaR * 0.5; f.reset(Math.cos(a) * r, Math.sin(a) * r); });
 }
 function resetBall() {
+  warps.length = 0;
   Object.assign(ball, { radius: BALL_R0, vr: BALL_R0, speed: D().speed0, kills: 0, state: 'idle', idleT: 99, target: null, homingT: 0, grace: 0, trailAcc: 0, boost: 1, frozenT: 0, predict: null });
   Object.assign(twin, { state: 'off', target: null, boost: 1, frozenT: 0, predict: null });
   ball.pos.set(0, BALL_R0 + 2, 0); ball.last.copy(ball.pos); ball.vel.set(0, 0, 0); ball.squash.set(1, 1, 1);
@@ -2518,7 +2589,8 @@ function setTarget(f, b = ball) {
 function launchBall() {
   const alive = fighters.filter(f => f.active && f.alive);
   if (alive.length < 2) { ball.state = 'idle'; ball.target = null; return; }
-  const t = alive[Math.floor(Math.random() * alive.length)];
+  const seen = alive.filter(f => !(f.ghostT > 0)), pick = seen.length ? seen : alive;
+  const t = pick[Math.floor(Math.random() * pick.length)];
   t.chest(tmp1).sub(ball.pos); tmp1.y = 0;
   if (tmp1.lengthSq() < 1e-4) tmp1.set(1, 0, 0);
   tmp1.normalize(); tmp1.y = 0.9; tmp1.normalize();
@@ -2526,8 +2598,17 @@ function launchBall() {
   setTarget(t);
   sfx.launch();
 }
+const warps = [];   // Time Warp bubbles: { x, y, z, t }, run by whoever runs the ball
+function warpFactor(p) {
+  let k = 1;
+  for (const w of warps) {
+    const d = Math.hypot(p.x - w.x, p.y - w.y, p.z - w.z);
+    if (d < WARP_R) k = Math.min(k, lerp(WARP_SLOW, 1, smooth(WARP_R * 0.75, WARP_R, d)));
+  }
+  return k;
+}
 function home(h, target, b = ball) {
-  const v = b.speed * b.boost;
+  const v = b.speed * b.boost * (warps.length ? warpFactor(b.pos) : 1);
   target.chest(tmp1).sub(b.pos);
   const dist = tmp1.length();
   tmp1.multiplyScalar(v / Math.max(dist, 1e-4));
@@ -2543,7 +2624,7 @@ function stepBall(h, b = ball) {
   const t = b.target;
   const sd = surfaceDist(t, b);
   if (t.kind !== 'remote') {
-    if (t.parryWindow > 0 && sd <= parryReach(b) * t.reachMul) { deflect(t, -1, null, t.parryMode, b); return true; }
+    if (t.parryWindow > 0 && sd <= parryReach(b) * t.reachMul * (t.catchT > 0 ? CATCH_REACH : 1)) { deflect(t, -1, null, t.parryMode, b); return true; }
     if (t.shieldT > 0 && sd <= parryReach(b) * 1.3) { shieldPop(t); deflect(t, -1, null, 0, b); return true; }
   }
   if (sd <= 0) {
@@ -2557,6 +2638,7 @@ function stepBall(h, b = ball) {
 }
 // mode 0 = a normal parry, 1 = Power Slash, 2 = Splitting Slash
 function deflect(p, aimSlot = -1, dirArr = null, mode = 0, b = ball) {
+  b.frozenT = 0;
   b.speed = parrySpeed(b.speed);
   p.parryWindow = 0; p.parryCD = 0; p.parryMode = 0; p.reachMul = 1;
   let next = null;
@@ -2590,7 +2672,7 @@ function splitBall(p, next, dir) {
   fly(ball, a - 0.5);
   Object.assign(twin, { radius: r, vr: r, speed: sp, frozenT: 0, homingT: 0, grace: 0, trailAcc: 0, predict: null, wasFrozen: false });
   twin.pos.copy(ball.pos); twin.last.copy(ball.pos); twin.squash.set(1, 1, 1);
-  const pool = fighters.filter(f => f.active && f.alive && f !== p && f !== next);
+  const pool = fighters.filter(f => f.active && f.alive && f !== p && f !== next && !(f.ghostT > 0));
   const other = pool.length ? pool[Math.floor(Math.random() * pool.length)] : next;
   setTarget(other, twin);
   fly(twin, a + 0.5);
@@ -2613,6 +2695,38 @@ function freezeBalls() {
 }
 
 /* ================= abilities ================= */
+// a guest asks the host to do something to the ball: [sequence, kind (1 attract, 2 telekinesis, 3 time warp), argument]
+function netRequest(kind, arg = 0) { net.rq = [++net.rqSeq, kind, arg]; }
+const nearestChaser = f => {
+  let best = null, bd = Infinity;
+  for (const b of balls) if (b.state === 'homing' && b.target !== f) { const d = b.pos.distanceToSquared(f.pos); if (d < bd) { bd = d; best = b; } }
+  return best;
+};
+function attractBall(f) {
+  const b = nearestChaser(f);
+  if (!b || !f.alive) return;
+  b.frozenT = 0;
+  setTarget(f, b);
+  b.boost = 1.5; b.homingT = 1.2;   // a hard, fast pull that turns sharply; the boost ends when it's parried
+}
+function teleBall(f, slot) {
+  const b = nearestChaser(f);
+  if (!b || !f.alive) return;
+  let next = slot >= 0 && slot < SLOTS ? fighters[slot] : null;
+  if (!next || !next.active || !next.alive || next === f || next === b.target) {
+    const pool = fighters.filter(x => x.active && x.alive && x !== f && x !== b.target && !(x.ghostT > 0));
+    next = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+  }
+  if (!next) return;
+  b.frozenT = 0;
+  next.chest(tmp2); tmp1.subVectors(tmp2, b.pos); tmp1.y = Math.max(tmp1.y, 0) + tmp1.length() * 0.25;
+  tmp1.normalize();
+  setTarget(next, b);
+  b.vel.copy(tmp1).multiplyScalar(b.speed * 1.15);
+}
+function addWarp(f) {
+  if (f.alive) warps.push({ x: f.pos.x, y: f.pos.y + 1.2, z: f.pos.z, t: WARP_T });
+}
 // Shift / Q. Movement abilities just move you (your position is shared anyway); slash abilities are parries
 // with more reach; Frost Lock asks whoever runs the ball to freeze it; Aegis is judged like your own parries.
 function useAbility(f) {
@@ -2637,6 +2751,20 @@ function useAbility(f) {
     if (auth()) freezeBalls(); else net.fzSeq++;
   }
   else if (A.id === 'shield') f.shieldT = SHIELD_T;
+  else if (A.id === 'phantom') f.ghostT = PHANTOM_T;
+  else if (A.id === 'attract' || A.id === 'tele') {
+    // both need a ball that is chasing somebody else
+    if (game.state !== 'play' || !balls.some(b => b.state === 'homing' && b.target !== f)) return false;
+    if (A.id === 'attract') { f.catchT = CATCH_T; if (auth()) attractBall(f); else netRequest(1); }
+    else {
+      const aim = f.kind === 'local' ? aimTarget() : null;
+      if (auth()) teleBall(f, aim ? aim.slot : -1); else netRequest(2, aim ? aim.slot : -1);
+    }
+  }
+  else if (A.id === 'warp') {
+    if (game.state !== 'play') return false;
+    if (auth()) addWarp(f); else netRequest(3);
+  }
   f.abCD = A.cd; f.abCount++;
   abilityFx(f, A.id, from);
   if (f.kind === 'local' && net.mode === 'online' && net.room) publishPresence(0, true);
@@ -2681,7 +2809,75 @@ function abilityFx(f, id, from = null) {
   } else if (id === 'shield') {
     if (f.kind !== 'local' && f.kind !== 'bot') f.shieldT = SHIELD_T;   // others' domes are only for show
     shieldDome(f);
+  } else if (id === 'phantom') {
+    f.ghostT = PHANTOM_T;
+    f.chest(tmp2);
+    burst(tmp2, c, 40, 5, 0.7, false, 0.34);
+    burst(tmp2, WHITE, 16, 7, 0.4, false, 0.12);
+    ghostFx(f, f.pos, c);
+  } else if (id === 'attract' || id === 'tele') {
+    let b = null, bd = Infinity;
+    for (const x of balls) if (x.state === 'homing') { const d = x.pos.distanceToSquared(f.pos); if (d < bd) { bd = d; b = x; } }
+    if (b) {
+      tetherFx(f, b, c, id === 'attract' ? 0.7 : 0.4);
+      impactFlash(b.pos, c, 1.2 + b.vr * 0.5);
+      burst(b.pos, c, 30, 9, 0.45, false, 0.2);
+    }
+    if (id === 'attract') magnetRings(f, c);
+    else { f.chest(tmp2); burst(tmp2, c, 20, 4, 0.4, false, 0.18); }
+    if (local) game.shake = Math.max(game.shake, 0.2);
+  } else if (id === 'warp') {
+    warpDome(f, c);
   }
+}
+// a crackling line from a player to a ball that follows both for a moment
+function tetherFx(f, b, color, dur) {
+  const N = 28, g = new THREE.BufferGeometry(), pos = new Float32Array(N * 3);
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const line = new THREE.Line(g, new THREE.LineBasicMaterial({ color: color.clone().multiplyScalar(3), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+  line.frustumCulled = false;
+  const a = V();
+  addFx(line, dur, false, k => {
+    f.chest(a);
+    for (let i = 0; i < N; i++) {
+      const u = i / (N - 1), wig = Math.sin(u * Math.PI) * Math.sin(u * 19 + game.realTime * 34) * 0.3 * (1 - k);
+      pos[i * 3] = lerp(a.x, b.pos.x, u) + wig; pos[i * 3 + 1] = lerp(a.y, b.pos.y, u) + wig * 0.6; pos[i * 3 + 2] = lerp(a.z, b.pos.z, u) - wig;
+    }
+    g.attributes.position.needsUpdate = true;
+    line.material.opacity = 1 - k * k;
+  }, () => { g.dispose(); line.material.dispose(); });
+}
+// rings that close in on the player, like a magnet drawing something home
+function magnetRings(f, color) {
+  for (let i = 0; i < 3; i++) {
+    const m = new THREE.Mesh(ringGeo, additive(color.clone().multiplyScalar(2.2)));
+    m.rotation.x = -Math.PI / 2; m.renderOrder = 9;
+    addFx(m, 0.65, false, k => {
+      const kk = clamp(k * 1.35 - i * 0.17, 0, 1);
+      m.position.set(f.pos.x, 0.08, f.pos.z);
+      m.scale.setScalar(lerp(7, 0.6, easeOut(kk)));
+      m.material.opacity = Math.sin(kk * Math.PI);
+    }, () => m.material.dispose());
+  }
+}
+const warpRingGeo = new THREE.TorusGeometry(1, 0.01, 6, 120);
+// a slow-time bubble: a faint shell, two tilted rings turning, and a ring on the ground
+function warpDome(f, color) {
+  const g = new THREE.Group();
+  const shell = new THREE.Mesh(domeGeo, additive(color.clone().multiplyScalar(0.6), 0.08));
+  shell.material.side = THREE.FrontSide;   // seen from inside (the camera often is) it would tint the whole screen
+  const r1 = new THREE.Mesh(warpRingGeo, additive(color.clone().multiplyScalar(2.2), 0.6));
+  const r2 = new THREE.Mesh(warpRingGeo, additive(color.clone().multiplyScalar(2.2), 0.6));
+  const floor = new THREE.Mesh(ringGeo, additive(color.clone().multiplyScalar(1.8), 0.5));
+  floor.rotation.x = -Math.PI / 2; floor.position.y = -1.12;
+  g.add(shell, r1, r2, floor);
+  g.position.set(f.pos.x, f.pos.y + 1.2, f.pos.z);
+  addFx(g, WARP_T, false, k => {
+    const a = smooth(0, 0.07, k) * (1 - smooth(0.85, 1, k));
+    g.scale.setScalar(WARP_R * (0.85 + 0.15 * easeOut(Math.min(1, k * 8))));
+    shell.material.opacity = 0.08 * a; r1.material.opacity = r2.material.opacity = 0.6 * a; floor.material.opacity = 0.5 * a;
+    r1.rotation.set(1.15, k * 7, 0); r2.rotation.set(-0.55, -k * 5, 0.9);
+  }, () => { for (const m of [shell, r1, r2, floor]) m.material.dispose(); });
 }
 function bigSlashFx(f, color, roll, size) {
   const outer = new THREE.Group(), mid = new THREE.Group();
@@ -2793,6 +2989,7 @@ function parryFx(p, b = ball, mode = 0) {
   }
 }
 function simBall(dt) {
+  for (let i = warps.length - 1; i >= 0; i--) if ((warps[i].t -= dt) <= 0) warps.splice(i, 1);
   for (const b of balls) {
     if (game.cine) return;
     if (b.state === 'idle') {
@@ -2806,6 +3003,9 @@ function simBall(dt) {
         if (t) setTarget(t, twin); else { twin.state = 'off'; continue; }
       }
       if (b.frozenT > 0) {
+        // the player it's after can smash it out of the ice at any moment, from anywhere
+        const ft = b.target;
+        if (ft.kind === 'local' && ft.parryWindow > 0) { deflect(ft, -1, null, ft.parryMode, b); continue; }
         b.frozenT -= dt;
         b.pos.addScaledVector(b.vel, dt); b.vel.multiplyScalar(Math.exp(-8 * dt));
         if (b.frozenT <= 0) { b.frozenT = 0; b.homingT = 0; }
@@ -3107,7 +3307,8 @@ function endCine(interrupted) {
 /* ================= bots ================= */
 const AB_USE = [0, 0.25, 0.4, 0.5, 0.6];   // how often bots use their ability, by difficulty
 function botAbility() {
-  const pool = game.diff <= 0 ? ['dash', 'leap'] : ABILITIES.map(a => a.id);
+  // Attract and Telekinesis are left to people: they're about choosing who gets the ball
+  const pool = game.diff <= 0 ? ['dash', 'leap'] : ABILITIES.map(a => a.id).filter(id => id !== 'attract' && id !== 'tele');
   return pool[Math.floor(Math.random() * pool.length)];
 }
 function planBotParry(b, tb = ball) {
@@ -3147,16 +3348,18 @@ function botThink(b, dt) {
   if (r > safe) { const push = (r - safe) * 0.35; wish.x -= b.pos.x / r * push; wish.z -= b.pos.z / r * push; }
   if (wish.lengthSq() > 1) wish.normalize();
   if (b.grounded && Math.random() < dt * (targeted ? 0.6 : 0.12)) b.jump();
+  // bots with Vanish slip out of sight now and then while the ball is busy with someone else
+  if (!targeted && b.ability === 'phantom' && b.abCD <= 0 && game.state === 'play' && Math.random() < dt * 0.15 * AB_USE[game.diff]) useAbility(b);
   if (targeted && game.state === 'play') {
     if (b.planSerial !== tb.serial) planBotParry(b, tb);
     b.react -= dt;
     const sd = surfaceDist(b, tb), reach = parryReach(tb), id = b.ability;
     if (b.useAb && b.abCD <= 0 && tb.frozenT <= 0) {
       // rescue abilities come out when a bot is about to fail; movement ones now and then
-      if ((id === 'shield' && b.plan !== 'good' && sd <= reach * 3) || (id === 'freeze' && b.plan !== 'good' && sd <= reach * 4)
+      if ((id === 'shield' && b.plan !== 'good' && sd <= reach * 3) || ((id === 'freeze' || id === 'warp') && b.plan !== 'good' && sd <= reach * 4)
         || ((id === 'dash' || id === 'leap' || id === 'blink') && sd > 6 && Math.random() < dt * 1.2)) {
         useAbility(b); b.useAb = false;
-        if (id === 'freeze') b.planSerial = -1;   // think again once the ball thaws
+        if (id === 'freeze' || id === 'warp') b.planSerial = -1;   // think again with more time
       }
     }
     if (b.react <= 0 && b.parryCD <= 0 && b.plan !== 'none' && tb.frozenT <= 0) {
@@ -3452,7 +3655,7 @@ function publishPresence(rdt, force) {
     v: PROTO, on: 1, nm: myName(), wp: profile.equipped, away: document.hidden ? 1 : null,
     p: L && L.alive ? [r2(L.pos.x), r2(L.pos.y), r2(L.pos.z), r2(L.facing)] : null,
     sw: L ? L.swingCount : 0, pr: net.myParry, hit: net.myHit >= 0 ? net.myHit : null,
-    ab: L ? [L.abCount, ABILITY_IDX[L.ability] || 0] : null, fz: net.fzSeq,
+    ab: L ? [L.abCount, ABILITY_IDX[L.ability] || 0] : null, fz: net.fzSeq, rq: net.rq,
     H: net.isHost ? hostSnapshot() : null,
   };
   net.room.presence(pres).catch(() => {});
@@ -3606,10 +3809,10 @@ function clientChecks() {
   const L = localF();
   if (!L || !L.alive || game.cine) return;
   for (const b of balls) {
-    if (b.state !== 'homing' || b.target !== L || b.predict || b.frozenT > 0 || net.reported.has(b.serial)) continue;
-    const sd = surfaceDist(L, b);
-    const parry = L.parryWindow > 0 && sd <= parryReach(b) * L.reachMul;
-    const shield = !parry && L.shieldT > 0 && sd <= parryReach(b) * 1.3;
+    if (b.state !== 'homing' || b.target !== L || b.predict || net.reported.has(b.serial)) continue;
+    const sd = surfaceDist(L, b), frozen = b.frozenT > 0;
+    const parry = L.parryWindow > 0 && (frozen || sd <= parryReach(b) * L.reachMul * (L.catchT > 0 ? CATCH_REACH : 1));
+    const shield = !parry && !frozen && L.shieldT > 0 && sd <= parryReach(b) * 1.3;
     if (parry || shield) {
       const mode = parry ? L.parryMode : 0;
       if (shield) shieldPop(L);
@@ -3620,7 +3823,7 @@ function clientChecks() {
       net.reported.add(b.serial);
       if (net.reported.size > 64) net.reported.delete(net.reported.values().next().value);
       L.parryWindow = 0; L.parryCD = 0; L.parryMode = 0; L.reachMul = 1;
-      b.speed = parrySpeed(b.speed); b.boost = mode === 1 ? POWER_BOOST : 1;
+      b.speed = parrySpeed(b.speed); b.boost = mode === 1 ? POWER_BOOST : 1; b.frozenT = 0;
       b.vel.copy(tmp1).multiplyScalar(b.speed * b.boost);
       b.homingT = 0;
       b.predict = { serial: b.serial, until: performance.now() + 900, target: aim };
@@ -3629,7 +3832,7 @@ function clientChecks() {
       publishPresence(0, true);
       return;
     }
-    if (sd <= 0 && net.myHit !== b.serial) { net.myHit = b.serial; publishPresence(0, true); return; }
+    if (!frozen && sd <= 0 && net.myHit !== b.serial) { net.myHit = b.serial; publishPresence(0, true); return; }
   }
 }
 function hostReadReports(f, P) {
@@ -3651,6 +3854,15 @@ function hostReadReports(f, P) {
   const fz = num(P.fz), seen = net.fzSeen.get(f.owner);
   net.fzSeen.set(f.owner, fz);
   if (seen !== undefined && fz > seen && f.alive && game.state === 'play') freezeBalls();
+  // Attract, Telekinesis and Time Warp from a guest
+  const rq = Array.isArray(P.rq) ? P.rq : null, rs = rq ? num(rq[0]) : 0, rseen = net.rqSeen.get(f.owner);
+  net.rqSeen.set(f.owner, rs);
+  if (rq && rseen !== undefined && rs > rseen && f.alive && game.state === 'play') {
+    const kind = num(rq[1]) | 0;
+    if (kind === 1) attractBall(f);
+    else if (kind === 2) teleBall(f, num(rq[2], -1) | 0);
+    else if (kind === 3) addWarp(f);
+  }
 }
 function syncAbility(f, idx, count) {
   const A = ABILITIES[num(idx, 0) | 0] || ABILITIES[0];
@@ -3713,7 +3925,7 @@ async function joinOnline(room) {
   net.room = room;
   if (room.kind === 'p2p') room.onClose = reason => { if (net.room === room && net.mode === 'online') failOnline(reason); };
   Object.assign(net, { mode: 'online', me: null, isHost: false, hostPeer: null, joinedAt: game.realTime, lastHostPres: null, lastH: null, ball: null, twin: null, myParry: null, myHit: -1, rosterKey: '', presT: 0 });
-  net.reported.clear(); net.fzSeen.clear(); ball.predict = twin.predict = null;
+  net.reported.clear(); net.fzSeen.clear(); net.rqSeen.clear(); ball.predict = twin.predict = null;
   net.prSeen.clear(); net.missing.clear();
   $('menu').hidden = true; document.body.classList.remove('menu');
   configureRoster([], false);
@@ -3822,12 +4034,66 @@ addEventListener('pointerdown', () => sfx.init());
   }, { passive: false });
   document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
 }
-// touch controls grow with the screen: about 1.15x on phones, up to 1.75x on tablets
+// touch controls grow with the screen (about 1.15x on phones, up to 1.75x on tablets), times the player's own
+// size setting; buttons the player has dragged keep their spot as a fraction of the screen
+const TOUCH_BTNS = ['tParry', 'tJump', 'tDash'];
+const touchCfg = { s: 1, o: 1, pos: {} };
+{
+  const v = store.get('pbb-touch', null);
+  if (v && typeof v === 'object') {
+    touchCfg.s = clamp(num(v.s, 1), 0.7, 1.6); touchCfg.o = clamp(num(v.o, 1), 0.3, 1);
+    if (v.pos && typeof v.pos === 'object') for (const id of TOUCH_BTNS) {
+      const q = v.pos[id];
+      if (Array.isArray(q) && q.length === 2) touchCfg.pos[id] = [clamp(num(q[0], 0.5), 0.03, 0.97), clamp(num(q[1], 0.5), 0.05, 0.95)];
+    }
+  }
+}
 let touchScale = 1.15;
 function sizeTouch() {
-  touchScale = clamp(Math.min(innerWidth, innerHeight) / 340, 1.15, 1.75);
+  touchScale = clamp(Math.min(innerWidth, innerHeight) / 340, 1.15, 1.75) * touchCfg.s;
   document.documentElement.style.setProperty('--tu', touchScale.toFixed(3));
+  document.documentElement.style.setProperty('--to', touchCfg.o.toFixed(2));
+  for (const id of TOUCH_BTNS) {
+    const b = $(id), q = touchCfg.pos[id];
+    if (q) Object.assign(b.style, { left: q[0] * innerWidth + 'px', top: q[1] * innerHeight + 'px', right: 'auto', bottom: 'auto', transform: 'translate(-50%, -50%)' });
+    else Object.assign(b.style, { left: '', top: '', right: '', bottom: '', transform: '' });
+  }
 }
+const touchEditing = () => document.body.classList.contains('touch-edit');
+function syncTouchEdit() {
+  $('teSize').value = Math.round(touchCfg.s * 100); $('teSize').nextElementSibling.textContent = Math.round(touchCfg.s * 100) + '%';
+  $('teOp').value = Math.round(touchCfg.o * 100); $('teOp').nextElementSibling.textContent = Math.round(touchCfg.o * 100) + '%';
+}
+function openTouchEdit() {
+  exitLock(); setVolPop(false);
+  document.body.classList.add('touch-edit');
+  $('tePanel').hidden = false;
+  syncTouchEdit();
+}
+function closeTouchEdit() {
+  document.body.classList.remove('touch-edit');
+  $('tePanel').hidden = true;
+  store.set('pbb-touch', touchCfg);
+}
+$('touchEditBtn').addEventListener('click', openTouchEdit);
+$('teDone').addEventListener('click', closeTouchEdit);
+$('teReset').addEventListener('click', () => { touchCfg.s = 1; touchCfg.o = 1; touchCfg.pos = {}; sizeTouch(); syncTouchEdit(); store.set('pbb-touch', touchCfg); });
+$('teSize').addEventListener('input', e => { touchCfg.s = e.target.value / 100; sizeTouch(); syncTouchEdit(); });
+$('teOp').addEventListener('input', e => { touchCfg.o = e.target.value / 100; sizeTouch(); syncTouchEdit(); });
+let teDrag = null;
+for (const id of TOUCH_BTNS) $(id).addEventListener('pointerdown', e => {
+  if (!touchEditing()) return;
+  teDrag = { id, pid: e.pointerId };
+  try { $(id).setPointerCapture(e.pointerId); } catch { /* fine without */ }
+});
+addEventListener('pointermove', e => {
+  if (!teDrag || e.pointerId !== teDrag.pid) return;
+  touchCfg.pos[teDrag.id] = [clamp(e.clientX / innerWidth, 0.03, 0.97), clamp(e.clientY / innerHeight, 0.05, 0.95)];
+  sizeTouch();
+});
+for (const ev of ['pointerup', 'pointercancel']) addEventListener(ev, e => {
+  if (teDrag && e.pointerId === teDrag.pid) { teDrag = null; store.set('pbb-touch', touchCfg); }
+});
 sizeTouch();
 addEventListener('resize', sizeTouch);
 // touch: left thumb is a floating joystick, right thumb steers the camera
@@ -3863,7 +4129,7 @@ function endTouch(e) {
 }
 addEventListener('pointerup', endTouch);
 addEventListener('pointercancel', endTouch);
-const tapBtn = (id, fn) => $(id).addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); sfx.init(); fn(); });
+const tapBtn = (id, fn) => $(id).addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); sfx.init(); if (!touchEditing()) fn(); });
 tapBtn('tParry', pressParry);
 tapBtn('tJump', () => { const L = localF(); if (L && inMatch()) L.jump(); });
 tapBtn('tDash', () => { const L = localF(); if (L && inMatch()) useAbility(L); });
@@ -4443,6 +4709,12 @@ addEventListener('pagehide', () => storeProfile());
 
 $('muteBtn').textContent = sfx.muted ? 'Sound off' : 'Sound on';
 buildVolRows($('volMenu'), 'menu'); buildVolRows($('volPop'), 'hud'); syncVolUi();
+if (coarse) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'chipbtn'; b.textContent = 'Edit touch controls'; b.style.marginTop = '8px';
+  b.addEventListener('click', openTouchEdit);
+  $('volPop').append(b);
+}
 $('muteBtn').addEventListener('click', e => { sfx.init(); toggleMute(); e.currentTarget.blur(); });
 $('volBtn').addEventListener('click', e => { sfx.init(); setVolPop($('volPop').hidden); e.currentTarget.blur(); });
 document.addEventListener('pointerdown', e => {
@@ -4492,6 +4764,7 @@ function updateHud(rdt) {
   setText(el.fed, String(ball.kills));
   const tb = L && L.alive ? ballOn(L) : null, targeted = !!tb;
   el.warn.classList.toggle('on', !!targeted);
+  setText(el.warn, targeted && tb.frozenT > 0 ? (coarse ? 'Frozen · tap Parry to smash it' : 'Frozen · click to smash it') : 'Targeted');
   const cd = L ? (L.parryCD / PARRY_LOCKOUT).toFixed(3) : '1';
   el.ring.style.setProperty('--cd', cd);
   el.tParry.style.setProperty('--cd', cd);
