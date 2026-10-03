@@ -2241,8 +2241,8 @@ const blobMat = new THREE.ShaderMaterial({
 const blobMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), blobMat);
 blobMesh.visible = false; blobMesh.frustumCulled = false; blobMesh.renderOrder = 5;
 scene.add(blobMesh);
-const MERGE_T = 1.4;   // extra cutscene time a split ball spends flowing back together
-const T_GLIDE = 2.7, T_TOUCH = 3.25, MERGE_END = 4.25;   // the merge, after the eater has grown
+const MERGE_T = 0.6;   // extra cutscene time a split ball spends flowing back together
+const T_GLIDE = 2.4, T_ARRIVE = 3.5, MERGE_END = 3.9;   // the merge starts while the eater is still swelling
 const split = { r: BALL_R0, speed: 16 };   // the ball's size and speed before it split
 let serialCtr = 0;                          // every flight of either ball gets its own number
 // Frost Lock: a faceted ice shell around each ball
@@ -2931,7 +2931,8 @@ function beginCine(P) {
     c.oldSize = c.rC * 2;
     // frame both halves: swing the camera to the side the other half comes from and back off a little
     c.camDist += 3.5 + Math.min(6, c.tw.from.distanceTo(c.center) * 0.3);
-    c.camAng = Math.atan2(c.tw.from.x - c.center.x, c.tw.from.z - c.center.z) + P.side * 1.45;
+    // the camera orbits 0.3 rad/s, so start it early enough to be side-on when the drops meet (~3 s)
+    c.camAng = Math.atan2(c.tw.from.x - c.center.x, c.tw.from.z - c.center.z) + P.side * 1.45 - 0.3 * 3.0;
   }
   c.pullDir.subVectors(c.center, c.from);
   if (c.pullDir.lengthSq() < 1e-6) c.pullDir.set(0, 1, 0);
@@ -2957,9 +2958,11 @@ function updateCine(rdt) {
   game.slow = s;
   c.camAng += rdt * 0.3;
   // for a split ball the camera leans in close while the two halves flow together
-  const close = c.tw ? smooth(2.65, 3.05, t) * (1 - smooth(4.2, 4.8, t)) : 0;
-  const camD = lerp(c.camDist, 2.6 + c.rC * 4.2, close);
-  const camH = lerp(Math.max(0.8, c.center.y + 0.7 + c.rBig * 0.35), b.pos.y + c.rC * 0.9, close);
+  // a split ball's merge gets a close-up; an ordinary engulf keeps the usual framing
+  const close = c.tw ? smooth(2.35, 2.75, t) * (1 - smooth(3.7, 4.2, t)) : 0;
+  const baseH = Math.max(0.8, c.center.y + 0.7 + c.rBig * 0.35);
+  const camD = c.tw ? lerp(c.camDist, 2.6 + c.rNew * 4.2, close) : c.camDist;
+  const camH = c.tw ? lerp(baseH, b.pos.y + c.rNew * 0.9, close) : baseH;
   c.camPos.set(c.center.x + Math.sin(c.camAng) * camD, camH, c.center.z + Math.cos(c.camAng) * camD);
   tmp1.lerpVectors(c.center, b.pos, 0.5);
   // keep the incoming half of a split ball in the shot
@@ -3022,59 +3025,57 @@ function updateCine(rdt) {
     caption('The ball grows', '+Size  +Speed',
       `Ø ${c.oldSize.toFixed(2)} → ${(c.rNew * 2).toFixed(2)} m · ${c.oldSpeed.toFixed(1)} → ${c.newSpeed.toFixed(1)} m/s`, null);
   });
-  if (c.tw) {
+  if (c.tw && c.tTouch) {
     // the bridge snaps open the instant they touch; a ring of spray where the surfaces met
-    once('touch', T_TOUCH, () => {
+    once('touch', c.tTouch, () => {
       sfx.merge();
-      tmp2.lerpVectors(b.pos, twin.pos, c.r0 / (c.r0 + c.tw.r));
+      tmp2.lerpVectors(b.pos, twin.pos, b.vr / (b.vr + c.tw.r));
       burst(tmp2, b.rim, 26, 5, 0.5, true, 0.16);
     });
-    once('settle', 3.8, () => { sfx.stretch(); shockwave(b.pos, b.rim, 7, 0.6, true); });
+    once('settle', c.tTouch + 0.35, () => shockwave(b.pos, b.rim, 7, 0.6, true));
   }
   once('bars', 2.95 + G, () => { document.body.classList.remove('cine'); caption(null); });
   if (t >= 3.8 + G) endCine(false);
 }
-// Splitting Slash, in the cutscene, in two acts. First the half that hit eats the player on its own while
-// the other half hangs back. Then, after the gulp, the other half glides in and they merge like two water
-// droplets: the surfaces touch, a liquid bridge snaps open and widens, the two pull into one drop of the
-// same volume, and that drop wobbles long-flat-long before it settles.
+// Splitting Slash, in the cutscene. The half that hit eats the player and swells on its own while the other
+// half hangs back. Then, in one unbroken motion, the small drop slides in, touches, a liquid bridge snaps open
+// and fattens as it sinks into the big drop, which ripples and wobbles a little before settling round.
+// Everything is driven by how far apart the two centres are, so there are no stops between the stages.
 function mergeStep(c, t) {
   const b = ball, tw = c.tw, rt = tw.r;
   const axis = c.mAxis || (c.mAxis = V());
   axis.subVectors(tw.from, b.pos); axis.y *= 0.25;
   if (axis.lengthSq() < 1e-6) axis.set(1, 0, 0);
   axis.normalize();
-  // where it hangs back while the eating and growing happen: part of the way over, well clear of the ball
-  tmp1.copy(b.pos).addScaledVector(axis, Math.max(c.rBig, c.rEat) + rt + 2.2);
-  const hold = tmp3.lerpVectors(tw.from, tmp1, 0.6 * smooth(0.2, 2.0, t));
+  // where it hangs back while the eating happens: part of the way over, well clear of the ball
+  tmp1.copy(b.pos).addScaledVector(axis, Math.max(c.rBig, c.rEat) + rt + 1.5);
+  const hold = tmp3.lerpVectors(tw.from, tmp1, smooth(0.2, 2.2, t));
   hold.y += Math.sin(t * 2.2) * 0.12;
-  const touch = b.vr + rt;
-  if (t < T_TOUCH) {
-    // once the eater has grown, the small half glides in, speeding up, until the two surfaces meet
-    const a = smooth(T_GLIDE, T_TOUCH, t);
-    tmp2.copy(b.pos).addScaledVector(axis, touch * 0.98);
-    twin.pos.lerpVectors(hold, tmp2, a * a);
-    twin.vr = rt;
-    if (t < T_GLIDE + 0.25) { blobMesh.visible = false; return; }
-  }
-  const bridge = Math.sqrt(clamp((t - T_TOUCH) / 0.24, 0, 1));          // the neck opens fast, then slows
-  const cv = smooth(T_TOUCH + 0.1, T_TOUCH + 0.6, t);                     // centres pull together
-  const C2 = blobU.uC2.value;
-  if (t < T_TOUCH) C2.copy(twin.pos); else C2.copy(b.pos).addScaledVector(axis, touch * 0.98 * (1 - cv));
-  const R1 = lerp(b.vr, c.rNew, cv), R2 = lerp(rt, c.rNew, cv);
-  const tau = t - (T_TOUCH + 0.5);
-  const st = tau > 0 ? 1 + 0.32 * Math.exp(-2.6 * tau) * Math.cos(10 * tau) : 1 + 0.32 * smooth(T_TOUCH + 0.2, T_TOUCH + 0.5, t);
+  // one smooth curve from hanging back to fully inside: speeds up, then eases as it sinks in
+  const x = clamp((t - T_GLIDE) / (T_ARRIVE - T_GLIDE), 0, 1);
+  const xe = Math.pow(x, 0.7), p = xe * xe * (3 - 2 * xe);   // starts from rest, fastest early, long soft finish
+  const C2 = blobU.uC2.value.lerpVectors(hold, b.pos, p);
+  C2.y += Math.sin(p * Math.PI) * 0.35 * (1 - p);
+  twin.pos.copy(C2); twin.vr = rt;
+  if (t < T_GLIDE) { blobMesh.visible = false; return; }
+  const D = C2.distanceTo(b.pos), reach = b.vr + rt;
+  const over = clamp((reach - D) / reach, 0, 1);              // 0 = just touching, 1 = centres together
+  if (over > 0 && !c.tTouch) c.tTouch = t;
+  const bridge = Math.sqrt(clamp(over / 0.22, 0, 1));          // the neck opens fast, then slows
+  const R1 = lerp(b.vr, c.rNew, smooth(0.15, 0.95, over));
+  const tau = c.tTouch ? t - c.tTouch : 0;
+  // the big drop takes the hit: it ripples long and flat a few times, each smaller
+  const st = 1 + 0.2 * Math.exp(-3.2 * tau) * Math.sin(10 * tau) * smooth(0, 0.08, tau);
   blobU.uC1.value.copy(b.pos);
-  blobU.uR1.value = R1; blobU.uR2.value = R2;
-  blobU.uK.value = lerp(0.015, 1.3 * Math.min(c.r0, rt), bridge);
+  blobU.uR1.value = R1; blobU.uR2.value = rt * (1 - 0.35 * over * over);
+  blobU.uK.value = lerp(0.02, 1.4 * rt, bridge);
   blobU.uAxis.value.copy(axis);
   blobU.uS.value = st;
-  blobU.uWobble.value = 0.4 + 0.7 * bridge * (1 - smooth(3.8, MERGE_END, t));
-  twin.pos.copy(C2); twin.vr = R2;
+  blobU.uWobble.value = 0.35 + 0.6 * bridge * (1 - smooth(T_ARRIVE, MERGE_END, t));
   const done = t >= MERGE_END;
   blobMesh.visible = !done;
   if (!done) {
-    const D = C2.distanceTo(b.pos), bound = D * 0.5 + Math.max(R1, R2) * 1.8;
+    const bound = D * 0.5 + Math.max(R1, rt) * 1.8;
     blobMesh.position.lerpVectors(b.pos, C2, 0.5);
     blobMesh.scale.setScalar(bound * 2.02);
   } else twin.state = 'off';
