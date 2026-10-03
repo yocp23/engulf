@@ -74,6 +74,11 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--rune);outline-o
 #cross{left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;background:var(--sand);box-shadow:0 0 0 2px rgba(12,10,34,.55);opacity:.75}
 #pop{left:50%;top:calc(50% + 30px);transform:translateX(-50%);font:700 14px/1 var(--ui);letter-spacing:.18em;text-transform:uppercase;color:var(--rune);text-shadow:0 0 12px rgba(71,240,215,.6);opacity:0;transition:opacity .25s;white-space:nowrap}
 #pop.on{opacity:1;transition:none}
+#teleHint{left:50%;top:calc(50% + 78px);transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:5px;padding:9px 14px 10px;border-radius:8px;background:rgba(40,8,30,.62);border:1px solid rgba(255,126,182,.55);box-shadow:0 0 22px rgba(255,126,182,.3);white-space:nowrap}
+#teleHint .th-top{font:400 20px/1 var(--display);color:#ffd2e6;letter-spacing:.03em}
+#teleHint b{font-weight:400;color:#ff7eb6}
+#teleHint .th-keys{font:700 11px/1 var(--ui);letter-spacing:.16em;text-transform:uppercase;color:rgba(255,210,230,.8)}
+#teleHint i{display:block;height:3px;width:100%;border-radius:2px;background:#ff7eb6;transform-origin:left;box-shadow:0 0 8px #ff7eb6}
 #lock{left:50%;top:calc(50% + 34px);transform:translateX(-50%);background:var(--glass);border:1px solid var(--line);border-radius:6px;padding:9px 14px;font-size:14px;font-weight:600;white-space:nowrap}
 #lock b{color:var(--ember)}
 
@@ -114,7 +119,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--rune);outline-o
 #barTop{top:0;transform:translateY(-101%)}
 #barBot{bottom:0;transform:translateY(101%)}
 body.cine #barTop,body.cine #barBot{transform:none}
-body.menu #top,body.cine #top,body.cine #parry,body.cine #abil,body.cine #cross,body.cine #warn,body.cine #feed,body.cine #lock,body.cine #banner,body.cine #pop,body.cine #callout,body.cine #touchUI,body.cine #freeHint{opacity:0}
+body.menu #top,body.cine #top,body.cine #parry,body.cine #abil,body.cine #teleHint,body.cine #cross,body.cine #warn,body.cine #feed,body.cine #lock,body.cine #banner,body.cine #pop,body.cine #callout,body.cine #touchUI,body.cine #freeHint{opacity:0}
 #cap{position:fixed;left:16px;right:16px;bottom:calc(env(safe-area-inset-bottom,0px) + 1.6vh);height:11vh;z-index:6;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:4px;text-align:center;pointer-events:none;opacity:0;transition:opacity .25s}
 #cap.on{opacity:1}
 #cap .k{font-weight:700;letter-spacing:.32em;text-transform:uppercase;font-size:12px;color:var(--threat)}
@@ -331,6 +336,7 @@ body.touch-edit .tbtn{outline:2px dashed rgba(243,230,200,.7);outline-offset:5px
 <div class="hud" id="warn">Targeted</div>
 <div class="hud" id="cross"></div>
 <div class="hud" id="pop"></div>
+<div class="hud" id="teleHint" hidden><span class="th-top">Throw at <b id="teleWho">…</b></span><span class="th-keys" id="teleKeys">Shift or click</span><i id="teleBar"></i></div>
 <div class="hud mouse-only" id="lock" hidden><b>Click</b> to lock the camera</div>
 <div class="hud mouse-only" id="freeHint" hidden>Hold right mouse to look around · left click to parry</div>
 <div class="hud" id="feed"></div>
@@ -1476,7 +1482,7 @@ const ABILITIES = [
   { id: 'freeze', name: 'Frost Lock', price: 650, cd: 16, color: '#7fe8ff', desc: 'Freeze every ball in ice for 1.5 s. If a frozen ball is after you, walk up to it and hit it out of the ice whenever you like.' },
   { id: 'warp', name: 'Time Warp', price: 750, cd: 16, color: '#b4ff5a', desc: 'A 6 m bubble of slow time around you for 3.5 s. Balls crawl at a third of their speed inside it.' },
   { id: 'shield', name: 'Aegis', price: 800, cd: 18, color: '#ffd76a', desc: 'A golden dome that parries for you once in the next 1.5 seconds.' },
-  { id: 'tele', name: 'Telekinesis', price: 900, cd: 16, color: '#ff7eb6', desc: 'Grab a ball with your mind, from any distance: the one chasing you, or else the nearest one. Fling it 25% faster at the player under your aim marker.' },
+  { id: 'tele', name: 'Telekinesis', price: 900, cd: 16, color: '#ff7eb6', desc: 'Press to grab a ball from any distance (the one chasing you, or the nearest) and hold it in front of you. Look at a player, then press again or click to throw it at them 25% faster. It throws itself after 1.6 s.' },
   { id: 'split', name: 'Splitting Slash', price: 1000, cd: 18, color: '#ff3fd8', desc: 'A wide parry that splits the ball into two smaller, slower balls. They merge back once one of them gets someone.' },
 ];
 const ABILITY_BY_ID = Object.fromEntries(ABILITIES.map(a => [a.id, a]));
@@ -1496,6 +1502,7 @@ const AB_ICONS = {
   tele: '<path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11.5V4a1.5 1.5 0 0 1 3 0v8M14 11.5V6a1.5 1.5 0 0 1 3 0v8c0 4-2.5 7-6 7s-5-2-6.5-5L3 12.5a1.5 1.5 0 0 1 2.5-1.6L8 14"/><path d="M20 3l1 1M21 7h1"/>',
 };
 const abilityIcon = (id, size = 22) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${AB_ICONS[id] || AB_ICONS.dash}</svg>`;
+const TELE_HOLD = 1.6;   // how long Telekinesis can hold a ball before it throws itself
 const PHANTOM_T = 4, WARP_T = 3.5, WARP_R = 6, WARP_SLOW = 0.33, CATCH_T = 2.5, CATCH_REACH = 1.5;
 const POWER_BOOST = 1.4, SPLIT_SIZE = 0.72, SPLIT_SPEED = 0.75, FREEZE_T = 1.5, SHIELD_T = 1.5;
 function rollRarity(odds) {
@@ -2006,7 +2013,7 @@ class Fighter {
     this.facing = this.netFacing = Math.atan2(-x, -z); this.group.rotation.set(0, this.facing, 0);
     this.model.scale.set(1, 1, 1); this.model.rotation.set(0, 0, 0); this.model.position.set(0, 0, 0);
     this.parryWindow = 0; this.parryCD = 0; this.dashCD = 0; this.dashT = 0; this.swingT = 9; this.lastSwingT = 9;
-    this.abCD = 0; this.shieldT = 0; this.parryMode = 0; this.reachMul = 1; this.ghostT = 0; this.catchT = 0;
+    this.abCD = 0; this.shieldT = 0; this.parryMode = 0; this.reachMul = 1; this.ghostT = 0; this.catchT = 0; this.teleHold = 0;
     this.applyGhost();
     this.walk = 0; this.land = 0; this.think = 0; this.pace = 0.6; this.strafe = Math.random() < 0.5 ? 1 : -1;
     this.plan = 'none'; this.planSerial = -1; this.react = 0;
@@ -2040,6 +2047,7 @@ class Fighter {
     this.abCD = Math.max(0, this.abCD - dt);
     if (this.shieldT > 0) this.shieldT = Math.max(0, this.shieldT - dt);
     if (this.catchT > 0) this.catchT = Math.max(0, this.catchT - dt);
+    if (this.teleHold > 0 && this.kind === 'local') { this.teleHold -= dt; if (this.teleHold <= 0) teleRelease(this); }
     if (this.ghostT > 0) {
       this.ghostT = Math.max(0, this.ghostT - dt);
       // others only see the odd glint where an invisible player is
@@ -2234,7 +2242,7 @@ scene.add(ballLight);
 const ball = {
   pos: V(0, 3, 0), vel: V(), radius: BALL_R0, vr: BALL_R0, squash: V(1, 1, 1), last: V(0, 3, 0),
   speed: 16, kills: 0, state: 'idle', idleT: 99, target: null, homingT: 0, serial: 0, grace: 0, trailAcc: 0,
-  core: BALL_CORE.clone(), rim: BALL_RIM.clone(), boost: 1, frozenT: 0, wasFrozen: false, predict: null,
+  core: BALL_CORE.clone(), rim: BALL_RIM.clone(), boost: 1, frozenT: 0, wasFrozen: false, predict: null, heldBy: null, heldT: 0,
 };
 // the second half of a split ball: it only exists between a Splitting Slash and the next engulf
 const twinMat = ballMat.clone(), twinU = twinMat.uniforms;
@@ -2245,7 +2253,7 @@ scene.add(twinMesh, twinLight);
 const twin = {
   pos: V(0, 3, 0), vel: V(), radius: BALL_R0, vr: BALL_R0, squash: V(1, 1, 1), last: V(0, 3, 0),
   speed: 16, state: 'off', target: null, homingT: 0, serial: 0, grace: 0, trailAcc: 0,
-  core: BALL_CORE.clone(), rim: BALL_RIM.clone(), boost: 1, frozenT: 0, wasFrozen: false, predict: null,
+  core: BALL_CORE.clone(), rim: BALL_RIM.clone(), boost: 1, frozenT: 0, wasFrozen: false, predict: null, heldBy: null, heldT: 0,
 };
 const balls = [ball, twin];
 // The two halves of a split ball merging, drawn as ONE liquid surface: a ray-marched smooth union of two
@@ -2332,6 +2340,7 @@ for (const b of balls) {
   b.ice = g; b.iceK = 0;
 }
 const ICE_CORE = new THREE.Color(0.1, 0.32, 0.55), ICE_RIM = new THREE.Color(0.45, 0.85, 1.1);
+const TELE_CORE = new THREE.Color(0.55, 0.12, 0.35), TELE_RIM = new THREE.Color(1.1, 0.5, 0.8);
 
 /* ================= world markers ================= */
 const targetRing = new THREE.Mesh(new THREE.RingGeometry(0.8, 1.05, 48), additive(0xffffff, 0.9));
@@ -2344,6 +2353,20 @@ const youRing = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.68, 40), additive(
 youRing.rotation.x = -Math.PI / 2;
 const reachRing = new THREE.Mesh(new THREE.RingGeometry(0.97, 1, 96), additive(new THREE.Color(1.6, 0.15, 0.25), 0.4));
 reachRing.rotation.x = -Math.PI / 2;
+const TELE_COL = new THREE.Color('#ff7eb6');
+// Telekinesis: a beam from the holder to the ball (everyone sees it); for the holder, a ring under the player
+// they're about to throw at and a line from the ball to them
+const holdBeams = balls.map(() => {
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(30 * 3), 3));
+  const l = new THREE.Line(g, new THREE.LineBasicMaterial({ color: TELE_COL.clone().multiplyScalar(3), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
+  l.frustumCulled = false; l.visible = false; scene.add(l); return l;
+});
+const teleRing = new THREE.Mesh(new THREE.RingGeometry(0.75, 1.0, 48), additive(TELE_COL.clone().multiplyScalar(2.4), 0.9));
+teleRing.rotation.x = -Math.PI / 2; teleRing.visible = false; teleRing.renderOrder = 9;
+const teleLineGeo = new THREE.BufferGeometry(); teleLineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(24 * 3), 3));
+const teleLine = new THREE.Line(teleLineGeo, new THREE.LineDashedMaterial({ color: TELE_COL.clone().multiplyScalar(2.6), dashSize: 0.5, gapSize: 0.35, transparent: true, opacity: 0.9, depthWrite: false, fog: false }));
+teleLine.frustumCulled = false; teleLine.visible = false;
+scene.add(teleRing, teleLine);
 const twinRing = targetRing.clone(); twinRing.material = targetRing.material.clone();
 const twinArrow = targetArrow.clone(); twinArrow.children[0].material = targetArrow.children[0].material.clone();
 scene.add(targetRing, targetArrow, aimMarker, youRing, reachRing, twinRing, twinArrow);
@@ -2453,7 +2476,7 @@ function surfaceDist(f, b = ball) {
 function ballOn(f) {
   let best = null, bd = Infinity;
   for (const b of balls) {
-    if (b.state !== 'homing' || b.target !== f) continue;
+    if (b.state !== 'homing' || b.target !== f || b.heldBy) continue;
     const d = b.pos.distanceToSquared(f.pos);
     if (d < bd) { bd = d; best = b; }
   }
@@ -2521,7 +2544,7 @@ function placeAll() {
   act.forEach((f, i) => { const a = Math.PI / 2 + i / act.length * TAU, r = arenaR * 0.5; f.reset(Math.cos(a) * r, Math.sin(a) * r); });
 }
 function resetBall() {
-  warps.length = 0;
+  warps.length = 0; ball.heldBy = twin.heldBy = null;
   Object.assign(ball, { radius: BALL_R0, vr: BALL_R0, speed: D().speed0, kills: 0, state: 'idle', idleT: 99, target: null, homingT: 0, grace: 0, trailAcc: 0, boost: 1, frozenT: 0, predict: null });
   Object.assign(twin, { state: 'off', target: null, boost: 1, frozenT: 0, predict: null });
   ball.pos.set(0, BALL_R0 + 2, 0); ball.last.copy(ball.pos); ball.vel.set(0, 0, 0); ball.squash.set(1, 1, 1);
@@ -2570,7 +2593,7 @@ function enterLobby() {
 function endRound(w) {
   setState('over');
   game.winner = w ? w.slot : -1;
-  ball.state = 'idle'; ball.idleT = Infinity; ball.target = null; ball.frozenT = 0; ball.boost = 1;
+  ball.state = 'idle'; ball.idleT = Infinity; ball.target = null; ball.frozenT = 0; ball.boost = 1; ball.heldBy = twin.heldBy = null;
   twin.state = 'off'; twin.target = null; twin.frozenT = 0;
   announceWinner(w);
   if (net.mode === 'solo') showPanel(w && w.kind === 'local' ? 'win' : 'lose', w);
@@ -2703,10 +2726,20 @@ function mergeBalls(hitter) {
   return tw;
 }
 function freezeBalls() {
-  for (const b of balls) if (b.state === 'homing') { b.frozenT = FREEZE_T; b.vel.multiplyScalar(0.2); }
+  for (const b of balls) if (b.state === 'homing' && !b.heldBy) { b.frozenT = FREEZE_T; b.vel.multiplyScalar(0.2); }
 }
 
 /* ================= abilities ================= */
+// the second half of Telekinesis: throw the held ball at whoever is under your aim
+function teleRelease(f) {
+  f.teleHold = 0;
+  const slot = f.kind === 'local' ? teleAimSlot() : -1;
+  if (auth()) teleThrow(f, slot); else netRequest(4, slot);
+  f.abCD = ABILITY_BY_ID.tele.cd; f.abCount++;
+  abilityFx(f, 'tele');
+  if (f.kind === 'local') game.shake = Math.max(game.shake, 0.3);
+  if (f.kind === 'local' && net.mode === 'online' && net.room) publishPresence(0, true);
+}
 // a guest asks the host to do something to the ball: [sequence, kind (1 attract, 2 telekinesis, 3 time warp), argument]
 function netRequest(kind, arg = 0) { net.rq = [++net.rqSeq, kind, arg]; }
 const nearestChaser = f => {
@@ -2741,6 +2774,35 @@ function aimOrder(skip) {
     .map(f => { const dx = f.pos.x - L.pos.x, dz = f.pos.z - L.pos.z, d = Math.hypot(dx, dz) || 1; return [f, (dx * fx_ + dz * fz) / d]; })
     .sort((a, b) => b[1] - a[1]).map(e => e[0]);
 }
+// where a held ball floats: a few metres in front of the holder, a little above their head
+function holdPoint(f, out) {
+  return f.chest(out).add(tmp4.set(Math.sin(f.facing) * 3.2, 1.0, Math.cos(f.facing) * 3.2));
+}
+const teleAimSlot = () => { const a = aimOrder([])[0]; return a ? a.slot : -1; };
+function teleGrab(f) {
+  const b = teleChoose(f);
+  if (!b || !f.alive) return;
+  b.heldBy = f; b.heldT = TELE_HOLD + (f.kind === 'remote' ? 0.5 : 0);
+  b.frozenT = 0; b.boost = 1; b.target = f;
+  b.serial = ++serialCtr;   // any parry or hit report about its old flight no longer counts
+}
+function teleThrow(f, slot) {
+  const b = balls.find(x => x.heldBy === f);
+  if (!b) return;
+  b.heldBy = null; b.heldT = 0;
+  let next = slot >= 0 && slot < SLOTS ? fighters[slot] : null;
+  if (!next || !next.active || !next.alive || next === f || next.ghostT > 0) {
+    const pool = fighters.filter(x => x.active && x.alive && x !== f && !(x.ghostT > 0));
+    next = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+  }
+  if (!next) { setTarget(f, b); return; }
+  next.chest(tmp2); tmp1.subVectors(tmp2, b.pos); tmp1.y = Math.max(tmp1.y, 0) + tmp1.length() * 0.2;
+  tmp1.normalize();
+  setTarget(next, b);
+  b.boost = 1.25;   // a hard throw; it ends when someone parries it
+  b.vel.copy(tmp1).multiplyScalar(b.speed * b.boost);
+  b.teleT = 1;
+}
 function teleBall(f, slot) {
   const b = teleChoose(f);
   if (!b || !f.alive) return;
@@ -2763,6 +2825,7 @@ function addWarp(f) {
 // Shift / Q. Movement abilities just move you (your position is shared anyway); slash abilities are parries
 // with more reach; Frost Lock asks whoever runs the ball to freeze it; Aegis is judged like your own parries.
 function useAbility(f) {
+  if (f.teleHold > 0 && f.ability === 'tele') { teleRelease(f); return true; }
   if (!f.active || !f.alive || f.abCD > 0 || game.cine) return false;
   const A = ABILITY_BY_ID[f.ability] || ABILITIES[0];
   let from = null;
@@ -2799,9 +2862,11 @@ function useAbility(f) {
   else if (A.id === 'tele') {
     const b = game.state === 'play' ? teleChoose(f) : null;
     if (!b) { if (f.kind === 'local') popup('No ball to grab yet'); return false; }
-    // send it to whoever is under your aim marker, unless that's who it's already after
-    const aim = f.kind === 'local' ? aimOrder([b.target])[0] : null;
-    if (auth()) teleBall(f, aim ? aim.slot : -1); else netRequest(2, aim ? aim.slot : -1);
+    if (auth()) teleGrab(f); else netRequest(2);
+    f.teleHold = TELE_HOLD; f.abCount++;
+    abilityFx(f, 'tele');
+    if (f.kind === 'local' && net.mode === 'online' && net.room) publishPresence(0, true);
+    return true;   // the cooldown starts when it's thrown
   }
   else if (A.id === 'warp') {
     if (game.state !== 'play') return false;
@@ -3046,6 +3111,18 @@ function simBall(dt) {
         const t = botChooseTarget(null);
         if (t) setTarget(t, twin); else { twin.state = 'off'; continue; }
       }
+      if (b.heldBy) {
+        const hd = b.heldBy;
+        if (!hd.active || !hd.alive) b.heldBy = null;
+        else {
+          holdPoint(hd, tmp1);
+          b.pos.lerp(tmp1, damp(9, dt)); b.vel.set(0, 0, 0);
+          b.heldT -= dt;
+          // a guest throws it themselves; this only catches a throw that never arrived
+          if (b.heldT <= 0) teleThrow(hd, hd.kind === 'local' ? teleAimSlot() : -1);
+          continue;
+        }
+      }
       if (b.frozenT > 0) {
         // the player it's after can walk up to it and hit it out of the ice whenever they like
         const ft = b.target;
@@ -3084,9 +3161,10 @@ function ballLook(b, rdt) {
   b.last.copy(b.pos);
   const frozen = b.frozenT > 0 && b.state === 'homing';
   if (frozen !== b.wasFrozen) { b.wasFrozen = frozen; if (frozen) freezeFx(b); else thawFx(b); }
-  const youT = b.state === 'homing' && L && b.target === L;
-  b.core.lerp(frozen ? ICE_CORE : youT ? RED_CORE : BALL_CORE, damp(12, rdt));
-  b.rim.lerp(frozen ? ICE_RIM : youT ? RED_RIM : BALL_RIM, damp(12, rdt));
+  const youT = b.state === 'homing' && L && b.target === L && !b.heldBy;
+  // held by Telekinesis: pink and calm, not the red of a ball coming for you
+  b.core.lerp(b.heldBy ? TELE_CORE : frozen ? ICE_CORE : youT ? RED_CORE : BALL_CORE, damp(12, rdt));
+  b.rim.lerp(b.heldBy ? TELE_RIM : frozen ? ICE_RIM : youT ? RED_RIM : BALL_RIM, damp(12, rdt));
   b.iceK = clamp(b.iceK + (frozen ? rdt * 7 : -rdt * 5), 0, 1);
   b.ice.visible = b.iceK > 0.01 && (b !== twin || twin.state !== 'off');
   if (b.ice.visible) {
@@ -3162,7 +3240,7 @@ function beginCine(P) {
     Object.assign(twin, { state: 'merging', target: null, predict: null, frozenT: 0, boost: 1, radius: P.tw.r, vr: P.tw.r, wasFrozen: false });
     twin.pos.copy(P.tw.pos); twin.last.copy(twin.pos);
   } else if (twin.state !== 'off') { twin.state = 'off'; twin.target = null; twin.predict = null; }
-  ball.frozenT = 0; ball.boost = 1; ball.predict = null;
+  ball.frozenT = 0; ball.boost = 1; ball.predict = null; ball.heldBy = twin.heldBy = null;
   v.alive = false; v.deathPos.copy(v.pos);
   ball.state = 'engulf'; ball.target = null; ball.pos.copy(P.from); ball.radius = P.r0;
   // a split half that eats stays recognisably itself: it swells less than a whole ball does
@@ -3685,9 +3763,9 @@ function hostSnapshot() {
       ? [f.kind === 'bot' ? 2 : 1, f.kind === 'bot' ? f.name : (f.owner || ''), f.alive ? 1 : 0, r2(f.pos.x), r2(f.pos.y), r2(f.pos.z), r2(f.facing), f.swingCount, f.weaponId, ABILITY_IDX[f.ability] || 0, f.abCount]
       : [0]),
     b: [r2(ball.pos.x), r2(ball.pos.y), r2(ball.pos.z), r2(ball.vel.x), r2(ball.vel.y), r2(ball.vel.z), r3(ball.radius), r2(ball.speed),
-      ball.target ? ball.target.slot : -1, ball.serial, ball.state === 'homing' ? 1 : ball.state === 'engulf' ? 2 : 0, ball.kills, ball.frozenT > 0 ? 1 : 0, ball.boost > 1 ? 1 : 0],
+      ball.target ? ball.target.slot : -1, ball.serial, ball.state === 'homing' ? 1 : ball.state === 'engulf' ? 2 : 0, ball.kills, ball.frozenT > 0 ? 1 : 0, ball.boost > 1 ? 1 : 0, ball.heldBy ? ball.heldBy.slot : -1],
     b2: twin.state === 'homing' && twin.target
-      ? [r2(twin.pos.x), r2(twin.pos.y), r2(twin.pos.z), r2(twin.vel.x), r2(twin.vel.y), r2(twin.vel.z), r3(twin.radius), r2(twin.speed), twin.target.slot, twin.serial, twin.frozenT > 0 ? 1 : 0, twin.boost > 1 ? 1 : 0]
+      ? [r2(twin.pos.x), r2(twin.pos.y), r2(twin.pos.z), r2(twin.vel.x), r2(twin.vel.y), r2(twin.vel.z), r3(twin.radius), r2(twin.speed), twin.target.slot, twin.serial, twin.frozenT > 0 ? 1 : 0, twin.boost > 1 ? 1 : 0, twin.heldBy ? twin.heldBy.slot : -1]
       : null,
     sp: twin.state !== 'off' ? [r3(split.r), r2(split.speed)] : null,
     dp: [game.deflects, game.lastParrier, game.lastMode || 0, game.lastBall || 0], cn: game.lastCine, win: game.winner,
@@ -3796,12 +3874,12 @@ function applySnapshot(H) {
   net.ball = {
     pos: V(num(b[0]), num(b[1]), num(b[2])), vel: V(num(b[3]), num(b[4]), num(b[5])), radius: clamp(num(b[6], BALL_R0), 0.2, 6),
     speed: clamp(num(b[7], 16), 0, SPEED_MAX), target: num(b[8], -1) | 0, serial: num(b[9]), state: num(b[10]), kills: num(b[11]),
-    frozen: num(b[12]) === 1, boost: num(b[13]) === 1, t: performance.now(),
+    frozen: num(b[12]) === 1, boost: num(b[13]) === 1, held: num(b[14], -1) | 0, t: performance.now(),
   };
   const w = Array.isArray(H.b2) && H.b2.length >= 12 ? H.b2 : null;
   net.twin = w ? {
     pos: V(num(w[0]), num(w[1]), num(w[2])), vel: V(num(w[3]), num(w[4]), num(w[5])), radius: clamp(num(w[6], BALL_R0), 0.2, 6),
-    speed: clamp(num(w[7], 16), 0, SPEED_MAX), target: num(w[8], -1) | 0, serial: num(w[9]), state: 1, frozen: num(w[10]) === 1, boost: num(w[11]) === 1, t: performance.now(),
+    speed: clamp(num(w[7], 16), 0, SPEED_MAX), target: num(w[8], -1) | 0, serial: num(w[9]), state: 1, frozen: num(w[10]) === 1, boost: num(w[11]) === 1, held: num(w[12], -1) | 0, t: performance.now(),
   } : null;
   if (Array.isArray(H.dp) && num(H.dp[0]) > net.seenDeflects) {
     net.seenDeflects = num(H.dp[0]);
@@ -3842,6 +3920,7 @@ function followNet(b, s, dt, rdt) {
   b.radius = s.radius; b.speed = s.speed; b.serial = s.serial;
   serialCtr = Math.max(serialCtr, s.serial);
   b.frozenT = s.frozen ? 1 : 0; b.boost = s.boost ? POWER_BOOST : 1;
+  b.heldBy = s.held >= 0 && s.held < SLOTS ? fighters[s.held] : null;
   const t = s.state === 1 && s.target >= 0 && s.target < SLOTS ? fighters[s.target] : null;
   b.state = t && t.active ? 'homing' : 'idle';
   b.target = b.state === 'homing' ? t : null;
@@ -3856,7 +3935,7 @@ function clientChecks() {
   const L = localF();
   if (!L || !L.alive || game.cine) return;
   for (const b of balls) {
-    if (b.state !== 'homing' || b.target !== L || b.predict || net.reported.has(b.serial)) continue;
+    if (b.state !== 'homing' || b.target !== L || b.predict || b.heldBy || net.reported.has(b.serial)) continue;
     if (L.ghostT > 0) continue;   // invisible: it goes straight through you, the host retargets it
     const sd = surfaceDist(L, b), frozen = b.frozenT > 0;
     const parry = L.parryWindow > 0 && sd <= parryReach(b) * L.reachMul * (L.catchT > 0 ? CATCH_REACH : 1);
@@ -3908,7 +3987,8 @@ function hostReadReports(f, P) {
   if (rq && rseen !== undefined && rs > rseen && f.alive && game.state === 'play') {
     const kind = num(rq[1]) | 0;
     if (kind === 1) attractBall(f);
-    else if (kind === 2) teleBall(f, num(rq[2], -1) | 0);
+    else if (kind === 2) teleGrab(f);
+    else if (kind === 4) teleThrow(f, num(rq[2], -1) | 0);
     else if (kind === 3) addWarp(f);
   }
 }
@@ -4032,6 +4112,7 @@ function look(dx, dy, sens) {
 function pressParry() {
   const L = localF();
   if (!L || !L.alive || !['wait', 'cd', 'play', 'over'].includes(game.state)) return;
+  if (L.teleHold > 0) { teleRelease(L); return; }
   L.tryParry();
 }
 addEventListener('keydown', e => {
@@ -4199,6 +4280,7 @@ function updateLocalInput() {
 
 /* ================= HUD + menus ================= */
 const el = {
+  teleHint: $('teleHint'), teleWho: $('teleWho'), teleKeys: $('teleKeys'), teleBar: $('teleBar'),
   abil: $('abil'), abilRing: $('abilRing'), abilIcon: $('abilIcon'), abilName: $('abilName'), tDash: $('tDash'),
   alive: $('aliveN'), spd: $('spdN'), spdBar: $('spdBar'), size: $('sizeN'), fed: $('fedN'), warn: $('warn'), parry: $('parry'), ring: $('parryRing'),
   tParry: $('tParry'), lock: $('lock'), freeHint: $('freeHint'), pop: $('pop'), feed: $('feed'), roster: $('roster'), cross: $('cross'),
@@ -4835,6 +4917,14 @@ function updateHud(rdt) {
     setText(el.abilName, off ? `${A.name} · off in 1v1` : A.name);
   }
   el.cross.style.opacity = showMe ? 0.75 : 0;
+  const holding = !!L && L.teleHold > 0 && L.alive;
+  el.teleHint.hidden = !holding;
+  if (holding) {
+    const a = aimOrder([])[0];
+    setText(el.teleWho, a ? a.name : 'someone');
+    setText(el.teleKeys, coarse ? 'Tap Parry to throw' : 'Click or Shift to throw');
+    el.teleBar.style.transform = `scaleX(${clamp(L.teleHold / TELE_HOLD, 0, 1).toFixed(3)})`;
+  }
   el.lock.hidden = coarse || locked || net.lockFailed || !inMatch();
   el.freeHint.hidden = coarse || !net.lockFailed || !inMatch();
   game.danger = lerp(game.danger, targeted ? (tb.frozenT > 0 ? 0.2 : 0.35 + 0.65 * clamp(1 - surfaceDist(L, tb) / 18, 0, 1)) : 0, damp(10, rdt));
@@ -4859,7 +4949,7 @@ function updateHud(rdt) {
 }
 function updateMarkers(rdt) {
   const T = game.realTime, L = localF();
-  const t = ball.state === 'homing' ? ball.target : null;
+  const t = ball.state === 'homing' && !ball.heldBy ? ball.target : null;
   targetRing.visible = targetArrow.visible = !!t;
   if (t) {
     const k = 2;
@@ -4870,7 +4960,7 @@ function updateMarkers(rdt) {
     targetArrow.position.set(t.pos.x, t.pos.y + 3.3 + Math.sin(T * 8) * 0.12, t.pos.z);
     targetArrow.rotation.y += rdt * 3;
   }
-  const t2 = twin.state === 'homing' ? twin.target : null;
+  const t2 = twin.state === 'homing' && !twin.heldBy ? twin.target : null;
   twinRing.visible = twinArrow.visible = !!t2;
   if (t2) {
     twinRing.material.color.setRGB(twin.rim.r * 2, twin.rim.g * 2, twin.rim.b * 2);
@@ -4888,6 +4978,38 @@ function updateMarkers(rdt) {
   }
   youRing.visible = !!L && L.alive && game.state !== 'menu';
   if (L) youRing.position.set(L.pos.x, 0.03, L.pos.z);
+  // hold beams for every held ball
+  balls.forEach((b, i) => {
+    const line = holdBeams[i], h = b.heldBy, on = !!h && b.state === 'homing' && (b === ball || twin.state !== 'off');
+    line.visible = on;
+    if (!on) return;
+    const pos = line.geometry.attributes.position.array;
+    h.chest(tmp3);
+    for (let k = 0; k < 30; k++) {
+      const u = k / 29, wig = Math.sin(u * Math.PI) * Math.sin(u * 15 + T * 26) * 0.18;
+      pos[k * 3] = lerp(tmp3.x, b.pos.x, u) + wig; pos[k * 3 + 1] = lerp(tmp3.y, b.pos.y, u) + Math.sin(u * Math.PI) * 0.6; pos[k * 3 + 2] = lerp(tmp3.z, b.pos.z, u) - wig;
+    }
+    line.geometry.attributes.position.needsUpdate = true;
+  });
+  // the holder's aim preview: ring under the target and a dashed arc from the ball to them
+  const heldMine = L && L.teleHold > 0 ? balls.find(b => b.heldBy === L) : null;
+  const tAim = L && L.teleHold > 0 ? aimOrder([])[0] : null;
+  teleRing.visible = !!tAim;
+  teleLine.visible = !!(tAim && heldMine);
+  if (tAim) {
+    teleRing.position.set(tAim.pos.x, 0.05, tAim.pos.z);
+    teleRing.scale.setScalar(1.6 + 0.2 * Math.sin(T * 12));
+    if (heldMine) {
+      const pos = teleLineGeo.attributes.position.array;
+      tAim.chest(tmp3);
+      for (let k = 0; k < 24; k++) {
+        const u = k / 23;
+        pos[k * 3] = lerp(heldMine.pos.x, tmp3.x, u); pos[k * 3 + 1] = lerp(heldMine.pos.y, tmp3.y, u) + Math.sin(u * Math.PI) * 2.2; pos[k * 3 + 2] = lerp(heldMine.pos.z, tmp3.z, u);
+      }
+      teleLineGeo.attributes.position.needsUpdate = true;
+      teleLine.computeLineDistances();
+    }
+  }
   const rb = L && L.alive ? ballOn(L) : null;
   reachRing.visible = !!rb;
   if (rb) {
