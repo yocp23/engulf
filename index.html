@@ -351,7 +351,7 @@ body.menu #touchUI,body.panel #touchUI{visibility:hidden}
         <button class="btn cyan small" id="joinBtn" type="submit">Join</button>
         <button class="btn ghost small" id="onlineBtn" type="button" hidden>Claude arena</button>
       </form>
-      <p class="note" id="onlineNote">Host a game to get a 4-letter room code. Friends open their copy of the game, type the code and press Join.</p>
+      <p class="note" id="onlineNote">Host a game to get a 4-letter room code. Friends open the game at yocp23.github.io/engulf, type the code and press Join.</p>
       <p class="record" id="record">Wins: 0</p>
       <p class="record" id="loadErr" hidden>The 3D engine didn't load. Check your connection and reload the page.</p>
     </div>
@@ -3107,7 +3107,7 @@ function updateOnlineNote() {
   const n = $('onlineNote');
   $('onlineBtn').hidden = !net.claudeRoom;
   if (onlineMsg) { n.textContent = onlineMsg; return; }
-  const base = 'Host a game to get a 4-letter room code. Friends open their copy of the game, type the code and press Join.';
+  const base = 'Host a game to get a 4-letter room code. Friends open the game at yocp23.github.io/engulf, type the code and press Join.';
   if (!net.claudeRoom) { n.textContent = base; return; }
   const count = net.claudeRoom.peers().filter(p => p.presence && p.presence.on === 1 && !p.presence.rc && !p.isMe).length;
   n.textContent = `${base} ${count ? `${count} ${count === 1 ? 'person is' : 'people are'} in the Claude arena now.` : 'Or open the Claude arena for people with the link.'}`;
