@@ -1189,6 +1189,53 @@ function updateParticles(dt, rdt) {
   pMat.uniforms.uScale.value = pointScale();
 }
 
+// Flames: normally blended (not added) so they read against the bright arenas. Each one burns from a hot
+// yellow core through orange and red, then cools to a wisp of dark smoke as it rises and swells.
+const MAXF = 1400;
+const fPos = new Float32Array(MAXF * 3), fCol = new Float32Array(MAXF * 3), fSize = new Float32Array(MAXF), fAlpha = new Float32Array(MAXF);
+const fGeo = new THREE.BufferGeometry();
+fGeo.setAttribute('position', dyn(fPos, 3));
+fGeo.setAttribute('aColor', dyn(fCol, 3));
+fGeo.setAttribute('aSize', dyn(fSize, 1));
+fGeo.setAttribute('aAlpha', dyn(fAlpha, 1));
+const fMat = new THREE.ShaderMaterial({
+  uniforms: { uScale: { value: 400 } },
+  transparent: true, depthWrite: false, blending: THREE.NormalBlending,
+  vertexShader: pMat.vertexShader,
+  fragmentShader: `
+    varying vec3 vColor; varying float vAlpha;
+    void main(){ float d = length(gl_PointCoord - 0.5); if (d > 0.5) discard;
+      gl_FragColor = vec4(vColor, smoothstep(0.5, 0.1, d) * vAlpha); }`,
+});
+const flamePts = new THREE.Points(fGeo, fMat);
+flamePts.frustumCulled = false; flamePts.renderOrder = 9;
+scene.add(flamePts);
+const flames = [];
+const FL_CORE = [2.2, 1.5, 0.55], FL_MID = [1.6, 0.5, 0.06], FL_TIP = [0.75, 0.09, 0.02], FL_SMOKE = [0.09, 0.07, 0.07];
+function emitFlame(x, y, z, vx, vy, vz, life, s0, s1, heat) { if (flames.length < MAXF) flames.push({ x, y, z, vx, vy, vz, life, max: life, s0, s1, heat }); }
+function updateFlames(rdt) {
+  for (let i = flames.length - 1; i >= 0; i--) {
+    const p = flames[i];
+    p.life -= rdt;
+    if (p.life <= 0) { flames[i] = flames[flames.length - 1]; flames.pop(); continue; }
+    const k = Math.exp(-1.6 * rdt);
+    p.vx *= k; p.vz *= k; p.vy = p.vy * k + 2.4 * rdt;   // hot air rises
+    p.x += p.vx * rdt; p.y += p.vy * rdt; p.z += p.vz * rdt;
+  }
+  for (let i = 0; i < flames.length; i++) {
+    const p = flames[i], t = 1 - p.life / p.max, u = t * (1.25 - 0.45 * p.heat);   // hotter flames stay bright for longer
+    let A, B, e;
+    if (u < 0.2) { A = FL_CORE; B = FL_MID; e = u / 0.2; } else if (u < 0.5) { A = FL_MID; B = FL_TIP; e = (u - 0.2) / 0.3; } else { A = FL_TIP; B = FL_SMOKE; e = Math.min(1, (u - 0.5) / 0.3); }
+    for (let c = 0; c < 3; c++) fCol[i * 3 + c] = lerp(A[c], B[c], e);
+    fPos[i * 3] = p.x; fPos[i * 3 + 1] = p.y; fPos[i * 3 + 2] = p.z;
+    fSize[i] = lerp(p.s0, p.s1, Math.sqrt(t));
+    fAlpha[i] = (u < 0.5 ? 0.9 : lerp(0.9, 0.35, Math.min(1, (u - 0.5) / 0.3))) * smooth(0, 0.06, t) * (1 - smooth(0.6, 1, t));
+  }
+  fGeo.setDrawRange(0, flames.length);
+  for (const k of ['position', 'aColor', 'aSize', 'aAlpha']) fGeo.attributes[k].needsUpdate = true;
+  fMat.uniforms.uScale.value = pointScale();
+}
+
 /* ================= short-lived effects: shockwaves, slash waves, impact flashes ================= */
 const fx = [];
 const additive = (color, opacity = 1) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
@@ -1470,6 +1517,13 @@ const sfx = (() => {
       let t = 0.15, gap = 0.3;
       while (t < dur) { noise({ dur: 0.04, vol: 0.18, type: 'highpass', f0: 5000, delay: t }); t += gap; gap = Math.max(0.06, gap * 0.85); }
     },
+    // the slow-motion swing: a deep stretched whoosh with a fire roar building under it
+    hyperBurn(dur) {
+      noise({ dur, vol: 0.35, type: 'bandpass', f0: 160, f1: 900, q: 0.7 });
+      noise({ dur: dur * 0.8, vol: 0.18, type: 'lowpass', f0: 400, f1: 1600, delay: dur * 0.2 });
+      tone({ f0: 45, f1: 70, dur, type: 'sine', vol: 0.3, attack: dur * 0.6 });
+      for (let t = 0.3; t < dur; t += rand(0.05, 0.14)) noise({ dur: 0.03, vol: 0.06 + 0.12 * t / dur, type: 'highpass', f0: 3500, delay: t });
+    },
     // blade meeting the ball: a ringing clang over a deep hit
     hyperClang() {
       [880, 1320, 1975, 2637].forEach((f, i) => tone({ f0: f, f1: f * 0.985, dur: 1.4 - i * 0.2, type: 'sine', vol: 0.12 / (i + 1), attack: 0.001 }));
@@ -1574,7 +1628,7 @@ const AB_ICONS = {
 };
 const abilityIcon = (id, size = 22) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${AB_ICONS[id] || AB_ICONS.dash}</svg>`;
 // the dramatic hit (real seconds, near-frozen time), then the seconds the hitter gets to aim at full speed
-const HYPER_IMPACT = 1.35, HYPER_AIM = 3.0, HYPER_SLOW = 0.04, HYPER_PIERCE = 2;
+const HYPER_IMPACT = 2.75, HYPER_AIM = 3.0, HYPER_SLOW = 0.04, HYPER_PIERCE = 2;
 const TELE_HOLD = 1.6;   // how long Telekinesis can hold a ball before it throws itself
 const PHANTOM_T = 4, WARP_T = 3.5, WARP_R = 6, WARP_SLOW = 0.33, CATCH_T = 2.5, CATCH_REACH = 1.5;
 const POWER_BOOST = 1.4, SPLIT_SIZE = 0.72, SPLIT_SPEED = 0.75, FREEZE_T = 1.5, SHIELD_T = 1.5;
@@ -1809,29 +1863,34 @@ function wristAngle(t, dual) {
   if (t < 0.3) return cut;
   return lerp(cut, WRIST_IDLE, easeInOut((t - 0.3) / (SWING_T - 0.3)));
 }
-// Hypervelocity's anime strike, in real seconds. 'strike': coil back (anticipation), whip in, and the blade
-// meets the ball at HYPER_CONTACT. 'hold': leaning in, blade grinding and trembling against the ball while
+// Hypervelocity's anime strike, in real seconds. 'strike': coil back (anticipation), then a long slow-motion
+// swing with the blade white-hot and burning through the air, meeting the ball at HYPER_CONTACT. 'hold': leaning in, blade grinding and trembling against the ball while
 // aiming. 'release': a violent follow-through far past the ball into a low finishing pose, held, then relaxed.
-const HYPER_CONTACT = 0.36, HP_COILED = 0.29;
+const HYPER_CONTACT = 1.85, HP_COILED = 0.6;
 const HP_WIND = [0.8, -2.85, 0.4], HP_CLASH = [1.5, -0.35, -0.05], HP_FINISH = [2.4, 1.75, -0.5];
 const _hp = [0, 0, 0, 0, 0, 0, 0, 0, 0];
 function hyperPoseAt(a, out) {
   const t = a.t, P = (A, B, e) => { for (let i = 0; i < 3; i++) out[i] = lerp(A[i], B[i], e); };
   let twist = 0, lunge = 0, lean = 0, str = 0, wrist = 0, trem = 0, grip = 1;
   if (a.stage === 'strike') {
-    if (t < 0.12) { P(POSE_IDLE, HP_WIND, easeOut(t / 0.12)); twist = -0.75 * easeOut(t / 0.12); lean = -0.08; wrist = lerp(WRIST_IDLE, 0, easeOut(t / 0.12)); grip = 0; }
-    else if (t < HP_COILED) { P(HP_WIND, HP_WIND, 0); out[1] -= (t - 0.12) * 0.5; twist = -0.75 - (t - 0.12) * 0.4; lean = -0.1; trem = 0.25; grip = 0; }   // the held coil before the cut
-    else if (t < HYPER_CONTACT) { const e = Math.pow((t - HP_COILED) / (HYPER_CONTACT - HP_COILED), 2.2); P(HP_WIND, HP_CLASH, e); twist = lerp(-0.75, 0.2, e); lunge = 0.34 * e; lean = lerp(-0.08, 0.28, e); str = 1; grip = e; }
+    if (t < 0.3) { const e = easeOut(t / 0.3); P(POSE_IDLE, HP_WIND, e); twist = -0.75 * e; lean = -0.08; wrist = lerp(WRIST_IDLE, 0, e); grip = 0; }
+    else if (t < HP_COILED) { P(HP_WIND, HP_WIND, 0); out[1] -= (t - 0.3) * 0.25; twist = -0.75 - (t - 0.3) * 0.2; lean = -0.1; trem = 0.25; grip = 0; }   // the held coil
+    else if (t < HYPER_CONTACT) { const u = (t - HP_COILED) / (HYPER_CONTACT - HP_COILED), e = u * u * (1.6 - 0.6 * u); P(HP_WIND, HP_CLASH, e); twist = lerp(-0.75, 0.2, e); lunge = 0.34 * e; lean = lerp(-0.08, 0.28, e); str = 1; grip = e; }   // slow-mo: heavy, gathering speed
     else { P(HP_CLASH, HP_CLASH, 0); twist = 0.2; lunge = 0.34; lean = 0.28; trem = 0.4; str = 0.3; }
   } else if (a.stage === 'hold') {
     P(HP_CLASH, HP_CLASH, 0); twist = 0.2; lunge = 0.34; lean = 0.3; trem = 0.45 + clamp(t / HYPER_AIM, 0, 1) * 0.9; str = 0.3;
   } else {   // release
-    if (t < 0.09) { const e = easeOut(t / 0.09); P(HP_CLASH, HP_FINISH, e); twist = lerp(0.2, 1.05, e); lunge = lerp(0.34, 0.46, e); lean = lerp(0.3, 0.42, e); str = 1; grip = 1 - e; }
-    else if (t < 0.6) { const s = Math.sin((t - 0.09) * 9) * Math.exp(-(t - 0.09) * 7) * 0.04; P(HP_FINISH, HP_FINISH, 0); out[1] += s; twist = 1.05; lunge = 0.46; lean = 0.42; str = clamp(1 - (t - 0.09) * 6, 0, 1); grip = 0; }
+    if (t < 0.16) { const e = easeOut(t / 0.16); P(HP_CLASH, HP_FINISH, e); twist = lerp(0.2, 1.05, e); lunge = lerp(0.34, 0.46, e); lean = lerp(0.3, 0.42, e); str = 1; grip = 1 - e; }
+    else if (t < 0.6) { const s = Math.sin((t - 0.16) * 9) * Math.exp(-(t - 0.16) * 7) * 0.04; P(HP_FINISH, HP_FINISH, 0); out[1] += s; twist = 1.05; lunge = 0.46; lean = 0.42; str = clamp(1 - (t - 0.16) * 6, 0, 1); grip = 0; }
     else { const e = easeInOut(clamp((t - 0.6) / 0.35, 0, 1)); P(HP_FINISH, POSE_IDLE, e); twist = 1.05 * (1 - e); lunge = 0.46 * (1 - e); lean = 0.42 * (1 - e); wrist = lerp(0, WRIST_IDLE, e); grip = 0; }
   }
   out[3] = twist; out[4] = lunge; out[5] = str; out[6] = out[7] = out[8] = 0;
-  return { lean, wrist, trem, grip };
+  // how hot the blade burns: it heats in the coil, blazes through the slow swing, stays glowing on the ball
+  let burn = 0;
+  if (a.stage === 'strike') burn = t < 0.3 ? 0 : t < HP_COILED ? (t - 0.3) / (HP_COILED - 0.3) * 0.45 : t < HYPER_CONTACT ? 0.45 + 0.55 * (t - HP_COILED) / (HYPER_CONTACT - HP_COILED) : 1;
+  else if (a.stage === 'hold') burn = 0.8;
+  else burn = clamp(1 - t / 0.9, 0, 1);
+  return { lean, wrist, trem, grip, burn };
 }
 // out: [pitch, yaw, roll, body twist, lunge, trail strength, hand offset x, y, z]
 function swingPose(t, out, dual = false) {
@@ -1849,7 +1908,17 @@ function swingPose(t, out, dual = false) {
 // A ribbon between the blade's base and tip, remembered over the last fraction of a second.
 const TRAIL_N = 40, TRAIL_LIFE = 0.24;
 const _hsl = new THREE.Color(), _rgb = [0, 0, 0];
+const FIRE_A = [1.5, 0.8, 0.22], FIRE_B = [1.25, 0.3, 0.035], FIRE_C = [0.7, 0.06, 0.01];
 function trailRGB(f, hand, k, out) {
+  if (f.burn > 0) {   // a burning blade leaves a white-hot streak cooling to orange and red
+    trailRGB0(f, hand, k, out);
+    const A = k < 0.25 ? FIRE_A : FIRE_B, B = k < 0.25 ? FIRE_B : FIRE_C, e = k < 0.25 ? k / 0.25 : (k - 0.25) / 0.75;
+    for (let i = 0; i < 3; i++) out[i] = lerp(out[i], lerp(A[i], B[i], e), f.burn);
+    return;
+  }
+  trailRGB0(f, hand, k, out);
+}
+function trailRGB0(f, hand, k, out) {
   const w = f.weapon, t = hand === 1 && w.trail2 ? w.trail2 : w.trail;
   if (t === 'team') { const m = lerp(1.7, 0.55, k); out[0] = f.color.r * m; out[1] = f.color.g * m; out[2] = f.color.b * m; }
   else if (t === 'rainbow') { _hsl.setHSL((game.realTime * 0.6 + k * 0.85 + hand * 0.5) % 1, 1, 0.55); const m = lerp(1.8, 0.7, k); out[0] = _hsl.r * m; out[1] = _hsl.g * m; out[2] = _hsl.b * m; }
@@ -1901,7 +1970,8 @@ class SwordTrail {
     for (let k = 0; k < TRAIL_N; k++) {
       const r = this.ring[(this.head - k + TRAIL_N) % TRAIL_N];
       const age = now - r.time;
-      const a = age >= 0 && age < TRAIL_LIFE ? r.s * Math.pow(1 - age / TRAIL_LIFE, 1.3) : 0;
+      let a = age >= 0 && age < TRAIL_LIFE ? r.s * Math.pow(1 - age / TRAIL_LIFE, 1.3) : 0;
+      if (f.burn > 0) a *= (1 - f.burn * k / (TRAIL_N - 1)) * (1 - 0.45 * f.burn);   // the long slow-mo streak tapers off at its far end
       const src = a > 0.002 || !last ? r : last;   // collapse dead samples onto the last live one so nothing streaks
       if (a > 0.002) { any = true; last = r; }
       const i6 = k * 6, i8 = k * 8;
@@ -2111,7 +2181,7 @@ class Fighter {
     this.model.scale.set(1, 1, 1); this.model.rotation.set(0, 0, 0); this.model.position.set(0, 0, 0);
     this.parryWindow = 0; this.parryCD = 0; this.dashCD = 0; this.dashT = 0; this.swingT = 9; this.lastSwingT = 9;
     this.abCD = 0; this.shieldT = 0; this.parryMode = 0; this.reachMul = 1; this.ghostT = 0; this.catchT = 0; this.teleHold = 0;
-    this.gunT = 0; this.aimGun(0); this.swingHold = false; this.hyperAnim = null;
+    this.gunT = 0; this.aimGun(0); this.swingHold = false; this.hyperAnim = null; this.burn = 0;
     this.applyGhost();
     this.walk = 0; this.land = 0; this.think = 0; this.pace = 0.6; this.strafe = Math.random() < 0.5 ? 1 : -1;
     this.plan = 'none'; this.planSerial = -1; this.react = 0;
@@ -2280,7 +2350,34 @@ class Fighter {
     this.model.rotation.y = _hp[3];
     this.model.position.z = _hp[4];
     this.model.rotation.x = k.lean;
+    this.burn = k.burn;
     return _hp[5];
+  }
+  // Hypervelocity's burning blade: flames peel off along its length and hang in the air behind it, with embers
+  burnFx(dt) {
+    if (camera.position.distanceToSquared(this.pos) > 1600) return;
+    const b = this.burn;
+    for (let h = 0; h < this.hands.length; h++) {
+      if (h === 1 && !this.weapon.dual) break;
+      const hb = this.hb[h], ht = this.ht[h];
+      if (!this.pb) { this.pb = [V(), V()]; this.pt = [V(), V()]; this.pbT = -9; }
+      if (game.realTime - this.pbT > 0.2) { this.pb[h].copy(hb); this.pt[h].copy(ht); }   // a fresh start: nothing to fill in from
+      const n = Math.max(1, Math.round(600 * dt * b));
+      for (let i = 0; i < n; i++) {
+        const sm = Math.random(), u = 0.12 + 0.88 * Math.pow(Math.random(), 0.7);
+        tmp3.lerpVectors(this.pb[h], hb, sm); tmp4.lerpVectors(this.pt[h], ht, sm); tmp3.lerp(tmp4, u);
+        emitFlame(tmp3.x, tmp3.y, tmp3.z, rand(-0.35, 0.35), rand(0.2, 0.9), rand(-0.35, 0.35), rand(0.45, 1.0),
+          rand(0.12, 0.26) * (0.5 + 0.6 * u), rand(0.4, 0.8) * (0.6 + 0.6 * u), Math.random() * b);
+      }
+      // embers flicked off the edge
+      if (Math.random() < 6 * dt * b + 0.3 * b) {
+        tmp3.lerpVectors(hb, ht, rand(0.5, 1)); const l = rand(0.6, 1.1);
+        emit({ x: tmp3.x, y: tmp3.y, z: tmp3.z, vx: rand(-2, 2), vy: rand(0.5, 3), vz: rand(-2, 2), life: l, max: l,
+          s0: rand(0.04, 0.08), s1: 0.01, r: 3.4, g: 2.0, b: 0.6, a: 1, drag: 0.8, grav: 2.5, real: true });
+      }
+      this.pb[h].copy(hb); this.pt[h].copy(ht);
+    }
+    this.pbT = game.realTime;
   }
   sampleTrails(t, extra) {
     this.group.updateMatrixWorld(true);
@@ -2302,7 +2399,7 @@ class Fighter {
     const dash = this.dashT > 0 ? 0.5 : 0;
     if (this.hyperAnim) {
       // Hypervelocity takes over the arms; sub-sample its fast moments so the arc stays smooth
-      const a = this.hyperAnim, fast = a.stage !== 'hold', step = a.dtReal || 0.016;
+      const a = this.hyperAnim, fast = a.stage === 'release' || (a.stage === 'strike' && a.t < 0.3), step = a.dtReal || 0.016;
       const subs = fast ? 5 : 1, t0 = a.t;
       for (let i = subs - 1; i >= 0; i--) {
         a.t = Math.max(0, t0 - step * i / subs);
@@ -2312,7 +2409,9 @@ class Fighter {
         this.sampleTrails(game.gameTime - dt * i / subs, dash);
       }
       a.t = t0;
+      if (this.burn > 0.01) this.burnFx(step);
     } else {
+      this.burn = 0;
       const subs = this.swingT < SWING_T + 0.1 ? 4 : 1;
       for (let i = subs - 1; i >= 0; i--) {
         this.applyPose(this.swingT - dt * i / subs);
@@ -2329,7 +2428,10 @@ class Fighter {
     // blade glow flares during the slash; rainbow parts cycle their hue
     const flare = clamp(1 - Math.abs(this.swingT - 0.15) / 0.15, 0, 1) * 2.4;
     for (const hand of this.hands) for (const m of hand.mats) {
-      if (m.userData.glow) m.emissiveIntensity = m.userData.base + flare;
+      if (m.userData.glow) {
+        m.emissiveIntensity = m.userData.base + flare + this.burn * 2;
+        if (this.burn > 0 || m.userData.e0) { if (!m.userData.e0) m.userData.e0 = m.emissive.clone(); m.emissive.copy(m.userData.e0).lerp(FIRE_HOT, this.burn); }
+      }
       if (m.userData.rainbow) {
         _hsl.setHSL((game.realTime * 0.5 + this.slot * 0.13) % 1, 1, 0.55);
         if (m.userData.glow) m.emissive.copy(_hsl);
@@ -2363,7 +2465,7 @@ if (document.fonts && document.fonts.load) {
 /* ================= ball ================= */
 const BALL_CORE = new THREE.Color(1.0, 0.5, 0.12), BALL_RIM = new THREE.Color(1.0, 0.72, 0.3);
 const RED_CORE = new THREE.Color(1.0, 0.06, 0.12), RED_RIM = new THREE.Color(1.0, 0.3, 0.34);
-const SPARK = new THREE.Color(1, 0.9, 0.7);
+const SPARK = new THREE.Color(1, 0.9, 0.7), FIRE_HOT = new THREE.Color(1, 0.55, 0.15);
 const ballU = {
   uTime: { value: 0 }, uCore: { value: new THREE.Color() }, uRim: { value: new THREE.Color() }, uOpacity: { value: 1 },
   uWobble: { value: 0.25 }, uPull: { value: 0 }, uPullDir: { value: V(0, 1, 0) }, uHeat: { value: 0 },
@@ -3071,7 +3173,7 @@ function hyperVisStart(seq, from, dir, shooter) {
   game.hyperVis = { seq, phase: 'impact', t: 0, from: o, dir: d, want: d.clone(), len: 30, shooter };
   hyperLine.visible = false;
   // the strike's impact (flash, frame, sparks) lands when the blade arrives: see hyperContact
-  sfx.swing();
+  sfx.hyperBurn(HYPER_CONTACT);
 }
 // impact over: back to full speed with the line showing; the hitter has a few seconds to aim it
 function hyperVisAim() {
@@ -5730,13 +5832,13 @@ function updateCamera(rdt) {
       const sd = (gp.pos.x - mid.x) * tmp1.z - (gp.pos.z - mid.z) * tmp1.x;
       HVc.side = sd >= 0 ? 1 : -1;
     }
-    const dist = lerp(6.2, 4.8, smooth(0, HYPER_IMPACT, HVc.t));
-    const camAt = V(mid.x + tmp1.z * HVc.side * dist - tmp1.x * 1.7, mid.y + 0.55, mid.z - tmp1.x * HVc.side * dist - tmp1.z * 1.7);
+    const sw = smooth(0, HYPER_CONTACT, HVc.t), dist = lerp(6.4, 4.6, sw), back = lerp(2.2, 0.8, sw);
+    const camAt = V(mid.x + tmp1.z * HVc.side * dist - tmp1.x * back, mid.y + lerp(0.9, 0.45, sw), mid.z - tmp1.x * HVc.side * dist - tmp1.z * back);
     camera.position.lerp(camAt, w);
     tmp2.lerp(mid, w);
     const punch = smooth(HYPER_CONTACT - 0.02, HYPER_CONTACT + 0.04, HVc.t) * (1 - smooth(HYPER_CONTACT + 0.04, HYPER_CONTACT + 0.5, HVc.t));
     fov = lerp(fov, 44 - punch * 8, w);
-    HVc.roll = 0.16 * w * (HVc.side || 1);
+    HVc.roll = lerp(0.05, 0.16, sw) * w * (HVc.side || 1);
   } else if (HVc) HVc.roll = 0;
   if (game.shake > 0.001) {
     const s = game.shake * (reduceMotion ? 0.15 : 1) * 0.5;
@@ -5776,7 +5878,7 @@ function tick(fixedDt) {
   if (auth()) simBall(dt); else { followNetBall(dt, rdt); clientChecks(); }
   ballVisuals(dt, rdt);
   for (const f of fighters) if (f.active) { f.trails[0].update(game.gameTime, f); f.trails[1].update(game.gameTime, f); }
-  updateParticles(dt, rdt);
+  updateParticles(dt, rdt); updateFlames(rdt);
   updateFx(dt, rdt);
   weather.update(rdt, game.realTime);
   for (const fn of mapAnim) fn(game.realTime);
