@@ -589,10 +589,10 @@ const camera = new THREE.PerspectiveCamera(FOV, innerWidth / Math.max(1, innerHe
 camera.position.set(0, 16, 46);
 
 const FXShader = {
-  uniforms: { tDiffuse: { value: null }, uAmount: { value: 0 }, uDanger: { value: 0 }, uFlash: { value: 0 } },
+  uniforms: { tDiffuse: { value: null }, uAmount: { value: 0 }, uDanger: { value: 0 }, uFlash: { value: 0 }, uImpact: { value: 0 }, uLines: { value: 0 }, uTime: { value: 0 } },
   vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: `
-    uniform sampler2D tDiffuse; uniform float uAmount, uDanger, uFlash; varying vec2 vUv;
+    uniform sampler2D tDiffuse; uniform float uAmount, uDanger, uFlash, uImpact, uLines, uTime; varying vec2 vUv;
     void main(){
       vec2 c = vUv - 0.5;
       float r = length(c) * 1.4142;
@@ -604,6 +604,21 @@ const FXShader = {
       col *= mix(1.0, vig, 0.4 + uAmount * 0.45);
       col += vec3(1.0, 0.04, 0.1) * smoothstep(0.5, 1.1, r) * uDanger * 0.6;
       col += uFlash;
+      // anime speed lines: thin streaks rushing in from the screen edges, flickering
+      if (uLines > 0.001) {
+        float a = atan(c.y, c.x) * 34.0;
+        float id = floor(a), f = fract(a);
+        float seed = fract(sin(id * 91.73 + floor(uTime * 20.0) * 17.31) * 43758.5);
+        float streak = step(0.72, seed) * smoothstep(0.5, 0.0, abs(f - 0.5) * (1.0 + seed * 3.0));
+        col = mix(col, vec3(1.0), streak * smoothstep(0.42, 1.0, r) * uLines * 0.75);
+      }
+      // the impact frame: a stark, inverted two-tone frame at the instant of contact
+      if (uImpact > 0.001) {
+        float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
+        vec3 two = mix(vec3(1.0, 0.94, 0.96), vec3(0.07, 0.0, 0.04), smoothstep(0.32, 0.5, lum));
+        two = mix(two, vec3(1.0, 0.25, 0.4), smoothstep(0.85, 1.4, lum) * 0.8);
+        col = mix(col, two, uImpact);
+      }
       gl_FragColor = vec4(col, 1.0);
     }`,
 };
@@ -1455,6 +1470,12 @@ const sfx = (() => {
       let t = 0.15, gap = 0.3;
       while (t < dur) { noise({ dur: 0.04, vol: 0.18, type: 'highpass', f0: 5000, delay: t }); t += gap; gap = Math.max(0.06, gap * 0.85); }
     },
+    // blade meeting the ball: a ringing clang over a deep hit
+    hyperClang() {
+      [880, 1320, 1975, 2637].forEach((f, i) => tone({ f0: f, f1: f * 0.985, dur: 1.4 - i * 0.2, type: 'sine', vol: 0.12 / (i + 1), attack: 0.001 }));
+      tone({ f0: 70, f1: 38, dur: 0.6, type: 'sine', vol: 0.8, bus: 'crunch' });
+      noise({ dur: 0.12, vol: 0.6, type: 'bandpass', f0: 3600, q: 1.2, bus: 'crunch' });
+    },
     // Hypervelocity firing: a sonic boom
     hyperBoom() {
       noise({ dur: 0.08, vol: 1.0, type: 'highpass', f0: 1800 });
@@ -1553,7 +1574,7 @@ const AB_ICONS = {
 };
 const abilityIcon = (id, size = 22) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${AB_ICONS[id] || AB_ICONS.dash}</svg>`;
 // the dramatic hit (real seconds, near-frozen time), then the seconds the hitter gets to aim at full speed
-const HYPER_IMPACT = 0.95, HYPER_AIM = 3.0, HYPER_SLOW = 0.04, HYPER_PIERCE = 2;
+const HYPER_IMPACT = 1.35, HYPER_AIM = 3.0, HYPER_SLOW = 0.04, HYPER_PIERCE = 2;
 const TELE_HOLD = 1.6;   // how long Telekinesis can hold a ball before it throws itself
 const PHANTOM_T = 4, WARP_T = 3.5, WARP_R = 6, WARP_SLOW = 0.33, CATCH_T = 2.5, CATCH_REACH = 1.5;
 const POWER_BOOST = 1.4, SPLIT_SIZE = 0.72, SPLIT_SPEED = 0.75, FREEZE_T = 1.5, SHIELD_T = 1.5;
@@ -1787,6 +1808,30 @@ function wristAngle(t, dual) {
   if (t < 0.06) return lerp(WRIST_IDLE, cut, easeOut(t / 0.06));
   if (t < 0.3) return cut;
   return lerp(cut, WRIST_IDLE, easeInOut((t - 0.3) / (SWING_T - 0.3)));
+}
+// Hypervelocity's anime strike, in real seconds. 'strike': coil back (anticipation), whip in, and the blade
+// meets the ball at HYPER_CONTACT. 'hold': leaning in, blade grinding and trembling against the ball while
+// aiming. 'release': a violent follow-through far past the ball into a low finishing pose, held, then relaxed.
+const HYPER_CONTACT = 0.36, HP_COILED = 0.29;
+const HP_WIND = [0.8, -2.85, 0.4], HP_CLASH = [1.5, -0.35, -0.05], HP_FINISH = [2.4, 1.75, -0.5];
+const _hp = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+function hyperPoseAt(a, out) {
+  const t = a.t, P = (A, B, e) => { for (let i = 0; i < 3; i++) out[i] = lerp(A[i], B[i], e); };
+  let twist = 0, lunge = 0, lean = 0, str = 0, wrist = 0, trem = 0, grip = 1;
+  if (a.stage === 'strike') {
+    if (t < 0.12) { P(POSE_IDLE, HP_WIND, easeOut(t / 0.12)); twist = -0.75 * easeOut(t / 0.12); lean = -0.08; wrist = lerp(WRIST_IDLE, 0, easeOut(t / 0.12)); grip = 0; }
+    else if (t < HP_COILED) { P(HP_WIND, HP_WIND, 0); out[1] -= (t - 0.12) * 0.5; twist = -0.75 - (t - 0.12) * 0.4; lean = -0.1; trem = 0.25; grip = 0; }   // the held coil before the cut
+    else if (t < HYPER_CONTACT) { const e = Math.pow((t - HP_COILED) / (HYPER_CONTACT - HP_COILED), 2.2); P(HP_WIND, HP_CLASH, e); twist = lerp(-0.75, 0.2, e); lunge = 0.34 * e; lean = lerp(-0.08, 0.28, e); str = 1; grip = e; }
+    else { P(HP_CLASH, HP_CLASH, 0); twist = 0.2; lunge = 0.34; lean = 0.28; trem = 0.4; str = 0.3; }
+  } else if (a.stage === 'hold') {
+    P(HP_CLASH, HP_CLASH, 0); twist = 0.2; lunge = 0.34; lean = 0.3; trem = 0.45 + clamp(t / HYPER_AIM, 0, 1) * 0.9; str = 0.3;
+  } else {   // release
+    if (t < 0.09) { const e = easeOut(t / 0.09); P(HP_CLASH, HP_FINISH, e); twist = lerp(0.2, 1.05, e); lunge = lerp(0.34, 0.46, e); lean = lerp(0.3, 0.42, e); str = 1; grip = 1 - e; }
+    else if (t < 0.6) { const s = Math.sin((t - 0.09) * 9) * Math.exp(-(t - 0.09) * 7) * 0.04; P(HP_FINISH, HP_FINISH, 0); out[1] += s; twist = 1.05; lunge = 0.46; lean = 0.42; str = clamp(1 - (t - 0.09) * 6, 0, 1); grip = 0; }
+    else { const e = easeInOut(clamp((t - 0.6) / 0.35, 0, 1)); P(HP_FINISH, POSE_IDLE, e); twist = 1.05 * (1 - e); lunge = 0.46 * (1 - e); lean = 0.42 * (1 - e); wrist = lerp(0, WRIST_IDLE, e); grip = 0; }
+  }
+  out[3] = twist; out[4] = lunge; out[5] = str; out[6] = out[7] = out[8] = 0;
+  return { lean, wrist, trem, grip };
 }
 // out: [pitch, yaw, roll, body twist, lunge, trail strength, hand offset x, y, z]
 function swingPose(t, out, dual = false) {
@@ -2066,7 +2111,7 @@ class Fighter {
     this.model.scale.set(1, 1, 1); this.model.rotation.set(0, 0, 0); this.model.position.set(0, 0, 0);
     this.parryWindow = 0; this.parryCD = 0; this.dashCD = 0; this.dashT = 0; this.swingT = 9; this.lastSwingT = 9;
     this.abCD = 0; this.shieldT = 0; this.parryMode = 0; this.reachMul = 1; this.ghostT = 0; this.catchT = 0; this.teleHold = 0;
-    this.gunT = 0; this.aimGun(0); this.swingHold = false;
+    this.gunT = 0; this.aimGun(0); this.swingHold = false; this.hyperAnim = null;
     this.applyGhost();
     this.walk = 0; this.land = 0; this.think = 0; this.pace = 0.6; this.strafe = Math.random() < 0.5 ? 1 : -1;
     this.plan = 'none'; this.planSerial = -1; this.react = 0;
@@ -2213,6 +2258,30 @@ class Fighter {
     this.model.rotation.y = dual ? (_pose[3] - _pose2[3]) * 0.5 : _pose[3];
     this.model.position.z = Math.max(_pose[4], _pose2[4]);
   }
+  applyHyperPose(a) {
+    const k = hyperPoseAt(a, _hp), dual = this.weapon.dual, T = game.realTime * 47 + this.slot;
+    // a fine, fast tremble while the blade strains against the ball
+    const jx = (Math.sin(T) + Math.sin(T * 1.7)) * 0.012 * k.trem, jy = (Math.sin(T * 1.3 + 2) + Math.sin(T * 2.3)) * 0.012 * k.trem;
+    const p0 = this.pivots[0], p1 = this.pivots[1];
+    p0.rotation.set(_hp[0] + jx, _hp[1] + jy, _hp[2]);
+    p0.position.set(HAND_R[0], HAND_R[1], HAND_R[2] + _hp[4] * 0.9);
+    if (this.hands[0]) this.hands[0].group.rotation.y = k.wrist;
+    if (dual) {
+      p1.rotation.set(_hp[0] - jx, -_hp[1] - jy, -_hp[2]);
+      p1.position.set(HAND_L[0], HAND_L[1], HAND_L[2] + _hp[4] * 0.9);
+      if (this.hands[1]) this.hands[1].group.rotation.y = -k.wrist;
+    } else {
+      // the free hand joins the grip while it pushes, and flings out for balance on the follow-through
+      p1.rotation.set(0, 0, 0);
+      tmp4.set(p0.position.x + 0.2, p0.position.y - 0.06, p0.position.z - 0.08);
+      tmp3.set(HAND_L[0] + 0.25, HAND_L[1] + 0.25, HAND_L[2] - 0.45);
+      p1.position.lerpVectors(tmp3, tmp4, k.grip);
+    }
+    this.model.rotation.y = _hp[3];
+    this.model.position.z = _hp[4];
+    this.model.rotation.x = k.lean;
+    return _hp[5];
+  }
   sampleTrails(t, extra) {
     this.group.updateMatrixWorld(true);
     for (let h = 0; h < this.hands.length; h++) {
@@ -2231,11 +2300,25 @@ class Fighter {
     this.model.rotation.x = Math.min(sp / 8, 1) * 0.12;
     // sub-sample the swing so fast slashes still leave a smooth arc
     const dash = this.dashT > 0 ? 0.5 : 0;
-    const subs = this.swingT < SWING_T + 0.1 ? 4 : 1;
-    for (let i = subs - 1; i >= 0; i--) {
-      this.applyPose(this.swingT - dt * i / subs);
-      this.model.position.y = bob;
-      if (!(this.ghostT > 0 && this.kind !== 'local')) this.sampleTrails(game.gameTime - dt * i / subs, dash);
+    if (this.hyperAnim) {
+      // Hypervelocity takes over the arms; sub-sample its fast moments so the arc stays smooth
+      const a = this.hyperAnim, fast = a.stage !== 'hold', step = a.dtReal || 0.016;
+      const subs = fast ? 5 : 1, t0 = a.t;
+      for (let i = subs - 1; i >= 0; i--) {
+        a.t = Math.max(0, t0 - step * i / subs);
+        const str = this.applyHyperPose(a);
+        _pose[5] = str; _pose2[5] = this.weapon.dual ? str : 0;
+        this.model.position.y = bob;
+        this.sampleTrails(game.gameTime - dt * i / subs, dash);
+      }
+      a.t = t0;
+    } else {
+      const subs = this.swingT < SWING_T + 0.1 ? 4 : 1;
+      for (let i = subs - 1; i >= 0; i--) {
+        this.applyPose(this.swingT - dt * i / subs);
+        this.model.position.y = bob;
+        if (!(this.ghostT > 0 && this.kind !== 'local')) this.sampleTrails(game.gameTime - dt * i / subs, dash);
+      }
     }
     this.aimGun(dt);
     // the crescent slash wave starts when the blade begins to cut
@@ -2538,6 +2621,7 @@ function earn(n) {
 /* ================= game state ================= */
 const game = {
   state: 'menu', countdown: 0, realTime: 0, gameTime: 0, timeScale: 1, hitstop: 0, shake: 0, flash: 0, slow: 0, danger: 0,
+  impact: 0, lines: 0,
   cine: null, combo: 0, placement: 0, rid: 0, localSlot: 0, diff: diffIdx,
   deflects: 0, lastParrier: -1, cineSeq: 0, lastCine: null, winner: -1, nextRoundAt: 0, shownCd: 0, paidRound: 0,
 };
@@ -2829,10 +2913,12 @@ function startHyper(p, b, next, look = null) {
   dir.y = 0;
   if (dir.lengthSq() < 1e-4) dir.set(Math.sin(p.facing), 0, Math.cos(p.facing));
   dir.normalize();
-  // the strike: the blade is caught mid-slash with the ball pressed against its edge
-  p.swingT = HYPER_SWING; p.lastSwingT = HYPER_SWING; p.swingHold = true;
-  p.group.rotation.y = p.facing; p.applyPose(HYPER_SWING);
+  // the ball waits where the blade will meet it; the swing coils back and then whips in to it
+  p.swingT = SWING_T + 1; p.lastSwingT = SWING_T + 1; p.swingHold = false;
+  p.group.rotation.y = p.facing;
+  p.hyperAnim = { stage: 'hold', t: 0 }; p.applyHyperPose(p.hyperAnim);
   hyperHoldPoint(p, dir, b);
+  p.hyperAnim = { stage: 'strike', t: 0 };
   b.vel.set(0, 0, 0);
   b.hyper = { phase: 'impact', t: 0, dir, left: HYPER_PIERCE, shooter: p, seq: game.hyperSeq, aim: next };
   hyperVisStart(game.hyperSeq, b.pos, dir, p);
@@ -2901,7 +2987,9 @@ function hyperStep(b, dt) {
     b.vel.set(0, 0, 0);
     h.t += dt;
     if (h.phase === 'aim') hyperAimDir(h, h.dir);
-    if (h.shooter.alive) hyperHoldPoint(h.shooter, h.dir, b);
+    // until the blade arrives the ball hangs where it was hit; after that it rides the blade
+    const ha = h.shooter.hyperAnim;
+    if (h.shooter.alive && !(ha && ha.stage === 'strike' && ha.t < HYPER_CONTACT)) hyperHoldPoint(h.shooter, h.dir, b);
     return;
   }
   if (h.phase === 'coast') {
@@ -2982,13 +3070,8 @@ function hyperVisStart(seq, from, dir, shooter) {
   const o = V(from.x, 0.07, from.z), d = V(dir.x, 0, dir.z).normalize();
   game.hyperVis = { seq, phase: 'impact', t: 0, from: o, dir: d, want: d.clone(), len: 30, shooter };
   hyperLine.visible = false;
-  // the hit itself: a crack of light at the blade, sparks and a heavy thud
-  const local = shooter && shooter.kind === 'local';
-  impactFlash(ball.pos, HYPER_COL, 1.8, true);
-  burst(ball.pos, HYPER_COL, 40, 3.5, 0.9, true, 0.14);
-  burst(ball.pos, WHITE, 24, 5, 0.6, true, 0.07);
-  sfx.parry(1.4, 0.65);
-  game.flash = Math.max(game.flash, local ? 0.45 : 0.3); game.shake = Math.max(game.shake, 0.7);
+  // the strike's impact (flash, frame, sparks) lands when the blade arrives: see hyperContact
+  sfx.swing();
 }
 // impact over: back to full speed with the line showing; the hitter has a few seconds to aim it
 function hyperVisAim() {
@@ -2998,6 +3081,15 @@ function hyperVisAim() {
   hyperLine.visible = true;
   H.len = hyperLineSet(H.from, H.dir);
   sfx.hyperCharge(HYPER_AIM);
+}
+function hyperContact(H) {
+  game.impact = 1; game.lines = 1;
+  game.shake = Math.max(game.shake, 0.9); game.flash = Math.max(game.flash, 0.25);
+  sfx.parry(1.6, 0.6); sfx.hyperClang();
+  bladeContact(H.shooter, tmp3);
+  burst(tmp3, SPARK, 70, 9, 1.0, true, 0.12);
+  burst(tmp3, HYPER_COL, 30, 6, 0.8, true, 0.16);
+  impactFlash(tmp3, WHITE, 1.4, true);
 }
 // metal on the ball: a fountain of sparks from where the blade presses, with the odd bright crackle
 function hyperSparks(H, rdt) {
@@ -3021,24 +3113,26 @@ function hyperVisFire() {
   const H = game.hyperVis;
   if (!H || H.phase === 'fly') return;
   if (H.shooter) {
-    // the slash follows through as the ball leaves
-    H.shooter.swingHold = false;
-    H.shooter.swingT = HYPER_SWING;
-    spawnSlashWave(H.shooter, 0);
+    // the follow-through: a second impact frame, a huge crescent smear, and the blade carried far past
+    const sh = H.shooter;
+    sh.swingHold = false; sh.swingT = SWING_T + 1; sh.lastSwingT = SWING_T + 1;
+    sh.hyperAnim = { stage: 'release', t: 0 };
+    bigSlashFx(sh, HYPER_COL, 0.3, 1.5);
+    game.impact = 1; game.lines = Math.max(game.lines, 0.8);
   }
   if (H.phase === 'impact') hyperVisAim();
   H.phase = 'fly'; H.t = 0;
   hyperLine.visible = true; H.len = hyperLineSet(H.from, H.dir);
   hyperRing.visible = false;
   sfx.hyperBoom();
-  impactFlash(ball.pos, HYPER_COL, 3.4);
-  shockwave(ball.pos, HYPER_COL, 16, 0.6, true);
-  shockwave(ball.pos, WHITE, 9, 0.35, true);
-  game.flash = Math.max(game.flash, 0.4); game.shake = Math.max(game.shake, 0.8);
+  impactFlash(ball.pos, HYPER_COL, 2.2);
+  shockwave(ball.pos, HYPER_COL, 14, 0.5, true);
+  game.flash = Math.max(game.flash, 0.15); game.shake = Math.max(game.shake, 0.8);
 }
 function hyperVisEnd() {
   if (!game.hyperVis) return;
-  if (game.hyperVis.shooter) game.hyperVis.shooter.swingHold = false;
+  const sh = game.hyperVis.shooter;
+  if (sh) { sh.swingHold = false; if (sh.hyperAnim && sh.hyperAnim.stage !== 'release') sh.hyperAnim = null; }
   game.hyperVis.phase = 'end'; game.hyperVis.t = 0;
   hyperRing.visible = false;
 }
@@ -3048,10 +3142,21 @@ function hyperTick(rdt) {
   if (!H) { hyperLine.visible = false; hyperRing.visible = false; return; }
   H.t += rdt;
   const T = game.realTime;
-  if (H.shooter && (H.phase === 'impact' || H.phase === 'aim')) {
-    H.shooter.swingHold = true;
+  const sh = H.shooter;
+  if (sh) {
+    if (!sh.hyperAnim && (H.phase === 'impact' || H.phase === 'aim')) sh.hyperAnim = { stage: H.phase === 'aim' ? 'hold' : 'strike', t: H.phase === 'aim' ? 0 : H.t };
+    const a = sh.hyperAnim;
+    if (a) {
+      const before = a.t;
+      a.t += rdt; a.dtReal = rdt;
+      if (a.stage === 'strike' && before < HYPER_CONTACT && a.t >= HYPER_CONTACT) hyperContact(H);
+      if (a.stage === 'release' && a.t > 1.0) { sh.hyperAnim = null; }
+    }
+    if (H.phase === 'aim' && a && a.stage === 'strike') { a.stage = 'hold'; a.t = 0; }
+  }
+  if (sh && (H.phase === 'impact' || H.phase === 'aim')) {
     H.from.set(ball.pos.x, 0.07, ball.pos.z);
-    hyperSparks(H, rdt);
+    if (!(sh.hyperAnim && sh.hyperAnim.stage === 'strike' && sh.hyperAnim.t < HYPER_CONTACT)) hyperSparks(H, rdt);
   }
   if (H.phase === 'impact') {
     if (auth() && ball.hyper && ball.hyper.phase === 'impact' && H.t >= HYPER_IMPACT) { ball.hyper.phase = 'aim'; ball.hyper.t = 0; hyperVisAim(); }
@@ -4414,7 +4519,7 @@ function followNetBall(dt, rdt) {
   ball.kills = net.ball.kills;
   followNet(ball, net.ball, dt, rdt);
   const HV = game.hyperVis, me = localF();
-  if (HV && me && HV.shooter === me && (HV.phase === 'impact' || HV.phase === 'aim')) hyperHoldPoint(me, HV.dir, ball);
+  if (HV && me && HV.shooter === me && (HV.phase === 'impact' || HV.phase === 'aim') && !(me.hyperAnim && me.hyperAnim.stage === 'strike' && me.hyperAnim.t < HYPER_CONTACT)) hyperHoldPoint(me, HV.dir, ball);
   if (net.twin) {
     if (twin.state === 'off') { twin.pos.copy(net.twin.pos); twin.last.copy(twin.pos); twin.trailAcc = 0; twin.wasFrozen = false; }
     followNet(twin, net.twin, dt, rdt);
@@ -5625,12 +5730,14 @@ function updateCamera(rdt) {
       const sd = (gp.pos.x - mid.x) * tmp1.z - (gp.pos.z - mid.z) * tmp1.x;
       HVc.side = sd >= 0 ? 1 : -1;
     }
-    const dist = lerp(4.2, 3.2, smooth(0, HYPER_IMPACT, HVc.t));
-    const camAt = V(mid.x + tmp1.z * HVc.side * dist - tmp1.x * 1.1, mid.y + 0.35, mid.z - tmp1.x * HVc.side * dist - tmp1.z * 1.1);
+    const dist = lerp(6.2, 4.8, smooth(0, HYPER_IMPACT, HVc.t));
+    const camAt = V(mid.x + tmp1.z * HVc.side * dist - tmp1.x * 1.7, mid.y + 0.55, mid.z - tmp1.x * HVc.side * dist - tmp1.z * 1.7);
     camera.position.lerp(camAt, w);
     tmp2.lerp(mid, w);
-    fov = lerp(fov, 44, w);
-  }
+    const punch = smooth(HYPER_CONTACT - 0.02, HYPER_CONTACT + 0.04, HVc.t) * (1 - smooth(HYPER_CONTACT + 0.04, HYPER_CONTACT + 0.5, HVc.t));
+    fov = lerp(fov, 44 - punch * 8, w);
+    HVc.roll = 0.16 * w * (HVc.side || 1);
+  } else if (HVc) HVc.roll = 0;
   if (game.shake > 0.001) {
     const s = game.shake * (reduceMotion ? 0.15 : 1) * 0.5;
     camera.position.x += (Math.random() - 0.5) * s;
@@ -5639,6 +5746,7 @@ function updateCamera(rdt) {
     game.shake *= Math.exp(-rdt * 7);
   }
   camera.lookAt(tmp2);
+  if (game.hyperVis && game.hyperVis.roll) camera.rotateZ(game.hyperVis.roll);   // a dutch angle on the strike
   if (camera.fov !== fov) { camera.fov = fov; camera.updateProjectionMatrix(); }
 }
 
@@ -5679,6 +5787,10 @@ function tick(fixedDt) {
   fxPass.uniforms.uAmount.value = game.slow;
   fxPass.uniforms.uDanger.value = game.danger;
   fxPass.uniforms.uFlash.value = reduceMotion ? game.flash * 0.3 : game.flash;
+  fxPass.uniforms.uImpact.value = reduceMotion ? 0 : game.impact;
+  fxPass.uniforms.uLines.value = reduceMotion ? game.lines * 0.3 : game.lines;
+  fxPass.uniforms.uTime.value = game.realTime;
+  game.impact = Math.max(0, game.impact - rdt * 16); game.lines = Math.max(0, game.lines - rdt * 1.4);
   composer.render();
 }
 function frame() { requestAnimationFrame(frame); tick(); }
