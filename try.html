@@ -1628,7 +1628,7 @@ const AB_ICONS = {
 };
 const abilityIcon = (id, size = 22) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${AB_ICONS[id] || AB_ICONS.dash}</svg>`;
 // the dramatic hit (real seconds, near-frozen time), then the seconds the hitter gets to aim at full speed
-const HYPER_IMPACT = 2.05, HYPER_AIM = 3.0, HYPER_SLOW = 0.04, HYPER_PIERCE = 2;
+const HYPER_IMPACT = 2.05, HYPER_AIM = 1.8, HYPER_SLOW = 0.04, HYPER_AIM_SLOW = 0.35, HYPER_PIERCE = 2;   // aiming plays out in slow motion so the line is hard to escape
 const TELE_HOLD = 1.6;   // how long Telekinesis can hold a ball before it throws itself
 const PHANTOM_T = 4, WARP_T = 3.5, WARP_R = 6, WARP_SLOW = 0.33, CATCH_T = 2.5, CATCH_REACH = 1.5;
 const POWER_BOOST = 1.4, SPLIT_SIZE = 0.72, SPLIT_SPEED = 0.75, FREEZE_T = 1.5, SHIELD_T = 1.5;
@@ -3008,7 +3008,7 @@ function mergeBalls(hitter) {
 }
 /* ---------- Hypervelocity ---------- */
 // Run by whoever runs the ball. Impact: time nearly stops while the camera holds on the blade striking the ball.
-// Aim: the ball hangs where it was hit while the hitter swings a glowing line around for HYPER_AIM seconds and
+// Aim: the ball hangs where it was hit while the hitter swings a glowing line around for HYPER_AIM seconds (in slow motion) and
 // everyone else scrambles off it. Fly: dead straight at top speed; it swallows up to HYPER_PIERCE players it
 // touches (each gets the usual cutscene, then the shot carries on) and coasts to a stop after the last.
 function startHyper(p, b, next, look = null) {
@@ -4176,10 +4176,12 @@ function botThink(b, dt) {
   const HB = game.hyperVis;
   if (HB && HB.phase === 'aim' && HB.shooter !== b) {
     const rx = b.pos.x - HB.from.x, rz = b.pos.z - HB.from.z, along = rx * HB.dir.x + rz * HB.dir.z, across = rx * HB.dir.z - rz * HB.dir.x;
-    if (along > -2 && Math.abs(across) < ball.radius + PLAYER_R + 3) {
+    // it takes a moment to realise the line is on you
+    if (along > -2 && Math.abs(across) < ball.radius + PLAYER_R + 3) b.lineT = (b.lineT || 0) + dt; else b.lineT = 0;
+    if (b.lineT > 0.3) {
       const side = across >= 0 ? 1 : -1;
       wish.set(HB.dir.z * side, 0, -HB.dir.x * side);   // straight out of the line, the near way
-      if (b.ability === 'dash' && b.abCD <= 0 && Math.random() < dt * 2) useAbility(b);
+      if (b.ability === 'dash' && b.abCD <= 0 && Math.random() < dt * 0.5) useAbility(b);
     }
   }
   if (wish.lengthSq() > 1) wish.normalize();
@@ -5875,6 +5877,7 @@ function tick(fixedDt) {
   hyperTick(rdt);
   let ts = game.cine ? game.timeScale : 1;
   if (game.hyperVis && game.hyperVis.phase === 'impact') ts = Math.min(ts, HYPER_SLOW);
+  else if (game.hyperVis && game.hyperVis.phase === 'aim') ts = Math.min(ts, HYPER_AIM_SLOW);
   if (game.hitstop > 0) { game.hitstop -= rdt; ts = Math.min(ts, 0.08); }
   const dt = rdt * ts;
   game.gameTime += dt;
