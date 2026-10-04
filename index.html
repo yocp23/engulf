@@ -4192,10 +4192,11 @@ function botThink(b, dt) {
     if (b.planSerial !== tb.serial) planBotParry(b, tb);
     b.react -= dt;
     const sd = surfaceDist(b, tb), reach = parryReach(tb), id = b.ability;
-    if (b.useAb && b.abCD <= 0 && tb.frozenT <= 0) {
+    // a bot with the Gun shoots whenever the ball comes for it from a distance (the reload keeps it in check)
+    if (id === 'gun' && b.abCD <= 0 && tb.frozenT <= 0 && sd <= 14 && sd > reach + 1.5 && Math.random() < dt * 4) useAbility(b);
+    else if (b.useAb && b.abCD <= 0 && tb.frozenT <= 0) {
       // rescue abilities come out when a bot is about to fail; movement ones now and then
       if ((id === 'shield' && b.plan !== 'good' && sd <= reach * 3) || ((id === 'freeze' || id === 'warp') && b.plan !== 'good' && sd <= reach * 4)
-        || (id === 'gun' && b.plan !== 'good' && sd <= 14 && sd > reach)
         || ((id === 'dash' || id === 'leap' || id === 'blink') && sd > 6 && Math.random() < dt * 1.2)) {
         useAbility(b); b.useAb = false;
         if (id === 'freeze' || id === 'warp') b.planSerial = -1;   // think again with more time
