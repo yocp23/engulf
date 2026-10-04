@@ -1488,7 +1488,7 @@ const ABILITIES = [
   { id: 'blink', name: 'Phantom Step', price: 350, cd: 7, color: '#b98cff', desc: 'Teleport 10 m the way you move and leave an afterimage behind.' },
   { id: 'attract', name: 'Attract', price: 450, cd: 14, color: '#4f86ff', desc: 'Yank the nearest ball onto you. For 2.5 s your parries reach 50% further, so catch it and fire it where you want.' },
   { id: 'power', name: 'Power Slash', price: 500, cd: 10, color: '#ff5a2a', desc: 'A huge slash with double parry reach. The ball flies 40% faster until it reaches someone.' },
-  { id: 'gun', name: 'Gun', price: 600, cd: 6, color: '#ffd23f', desc: 'Shoot where your crosshair points. Hit a ball coming for you and it is parried back the way you shot it. Hit a ball chasing someone else and it gets blasted off course before it carries on after them.' },
+  { id: 'gun', name: 'Gun', price: 1200, cd: 6, color: '#ffd23f', desc: 'Pull out a blaster that aims itself: it shoots the ball coming for you, or else the nearest ball. Yours is parried away to the player you aim at; any other gets blasted off course before it carries on after its target.' },
   { id: 'phantom', name: 'Vanish', price: 550, cd: 15, color: '#a9b8ff', desc: 'Turn invisible for 4 s. A ball coming for you flies straight through you and picks someone else, and nobody can target you. Not allowed once only two players are left.' },
   { id: 'freeze', name: 'Frost Lock', price: 650, cd: 16, color: '#7fe8ff', desc: 'Freeze every ball in ice for 1.5 s. If a frozen ball is after you, walk up to it and hit it out of the ice whenever you like.' },
   { id: 'warp', name: 'Time Warp', price: 750, cd: 16, color: '#b4ff5a', desc: 'A 6 m bubble of slow time around you for 3.5 s. Balls crawl at a third of their speed inside it.' },
@@ -2047,6 +2047,32 @@ class Fighter {
     else this.dashDir.set(Math.sin(this.facing), 0, Math.cos(this.facing));
     this.dashT = 0.2;
   }
+  // the Gun ability: the blaster appears in the free hand, points at the ball, kicks, and goes away
+  drawGun(dir) {
+    if (!this.blaster) { this.blaster = buildBlaster(); this.pivots[1].add(this.blaster); }
+    this.gunT = 0.75; this.gunDir = (this.gunDir || V()).copy(dir);
+  }
+  muzzle(out, toward) {
+    this.pivots[1].getWorldPosition(out);
+    if (toward) out.add(tmp4.subVectors(toward, out).setLength(0.95));
+    return out;
+  }
+  aimGun(dt) {
+    if (!(this.gunT > 0)) {
+      if (this.blaster && this.blaster.visible) { this.blaster.visible = false; if (this.hands[1]) this.hands[1].group.visible = !(this.ghostT > 0 && this.kind !== 'local'); }
+      return;
+    }
+    this.gunT -= dt;
+    const age = 0.75 - this.gunT, p1 = this.pivots[1], d = this.gunDir;
+    const relYaw = Math.atan2(d.x, d.z) - this.facing - this.model.rotation.y, pitch = Math.asin(clamp(d.y, -1, 1));
+    const out = smooth(0, 0.08, age) * (1 - smooth(0.6, 0.75, age));   // draw, hold, holster
+    const kick = Math.exp(-age * 18) * smooth(0, 0.02, age);
+    p1.rotation.set(-pitch * out - kick * 0.6, relYaw * out, 0);
+    p1.position.set(lerp(HAND_L[0], 0.3, out), lerp(HAND_L[1], 1.35, out), lerp(HAND_L[2], 0.55, out) - kick * 0.18);
+    this.blaster.visible = out > 0.02 && !(this.ghostT > 0 && this.kind !== 'local');
+    this.blaster.scale.setScalar(1.6 * Math.max(0.05, out));
+    if (this.hands[1]) this.hands[1].group.visible = false;
+  }
   // a parry from an ability: bigger reach, and it works even right after a normal swing
   abilityParry(mode, reachMul) {
     this.parryWindow = PARRY_WINDOW + 0.08; this.parryCD = PARRY_LOCKOUT; this.swingT = 0; this.swingCount++;
@@ -2162,6 +2188,7 @@ class Fighter {
       this.model.position.y = bob;
       if (!(this.ghostT > 0 && this.kind !== 'local')) this.sampleTrails(game.gameTime - dt * i / subs, dash);
     }
+    this.aimGun(dt);
     // the crescent slash wave starts when the blade begins to cut
     const prev = this.lastSwingT;
     if (prev < 0.08 && this.swingT >= 0.08 && !(this.ghostT > 0 && this.kind !== 'local')) spawnSlashWave(this, 0);
@@ -2742,32 +2769,27 @@ function freezeBalls() {
 }
 
 /* ================= abilities ================= */
+// the Gun ability's blaster: dark metal, gold barrel, a glowing energy strip; it points down +z
+function buildBlaster() {
+  const g = new THREE.Group();
+  const metal = new THREE.MeshStandardMaterial({ color: 0x24202f, roughness: 0.32, metalness: 0.85, envMap: envTex, envMapIntensity: 1.2 });
+  const gold = new THREE.MeshStandardMaterial({ color: 0xffc23a, roughness: 0.22, metalness: 0.95, envMap: envTex, envMapIntensity: 1.3 });
+  const glow = new THREE.MeshBasicMaterial({ color: new THREE.Color(3.2, 2.5, 0.5), fog: false });
+  const add = (geo, mat, x, y, z, rx = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.x = rx; m.castShadow = true; g.add(m); return m; };
+  add(new THREE.BoxGeometry(0.1, 0.13, 0.4), metal, 0, 0.07, 0.12);                          // body
+  add(new THREE.BoxGeometry(0.085, 0.22, 0.11), metal, 0, -0.07, -0.03, 0.3);                // grip
+  add(new THREE.CylinderGeometry(0.038, 0.044, 0.22, 14), gold, 0, 0.075, 0.42, Math.PI / 2); // barrel
+  add(new THREE.CylinderGeometry(0.05, 0.05, 0.035, 14), glow, 0, 0.075, 0.54, Math.PI / 2);  // muzzle ring
+  add(new THREE.BoxGeometry(0.104, 0.022, 0.28), glow, 0, 0.115, 0.12);                       // energy strip
+  add(new THREE.BoxGeometry(0.02, 0.035, 0.035), gold, 0, 0.15, 0.27);                        // front sight
+  add(new THREE.TorusGeometry(0.045, 0.012, 6, 16, Math.PI), gold, 0, -0.02, 0.07, Math.PI / 2); // trigger guard
+  g.scale.setScalar(1.6);
+  g.visible = false;
+  return g;
+}
 const tracerGeo = new THREE.CylinderGeometry(0.085, 0.085, 1, 8, 1, true), UP_Y = new THREE.Vector3(0, 1, 0);
-// Gun: a hitscan shot. You aim with the crosshair (the middle of the screen); bots aim at the ball after them.
+// Gun: the blaster aims itself (see gunTargetBall) and always hits what it aims at.
 const GUN_RANGE = 70;
-function gunRay(f, origin, dir) {
-  if (f.kind === 'local') { origin.copy(camera.position); camera.getWorldDirection(dir); }
-  else {
-    f.chest(origin);
-    const b = ballOn(f);
-    if (b) dir.subVectors(b.pos, origin).normalize(); else dir.set(Math.sin(f.facing), 0, Math.cos(f.facing));
-  }
-}
-// the first ball the shot meets (balls count as a little bigger than they look), and where
-function gunHit(origin, dir) {
-  let best = null, bt = GUN_RANGE;
-  for (const b of balls) {
-    if (b.state !== 'homing' || b.heldBy) continue;
-    const ox = b.pos.x - origin.x, oy = b.pos.y - origin.y, oz = b.pos.z - origin.z;
-    const tca = ox * dir.x + oy * dir.y + oz * dir.z;
-    if (tca < 0) continue;
-    const R = b.radius + 0.55, d2 = ox * ox + oy * oy + oz * oz - tca * tca;
-    if (d2 > R * R) continue;
-    const th = tca - Math.sqrt(R * R - d2);
-    if (th < bt) { bt = th; best = b; }
-  }
-  return best ? { b: best, t: bt } : null;
-}
 // what a hit does: a ball after the shooter is parried along the shot; any other is knocked off course
 function gunApply(f, b, dirArr, aimSlot) {
   if (!b || b.state !== 'homing' || b.heldBy) return;
@@ -2776,16 +2798,26 @@ function gunApply(f, b, dirArr, aimSlot) {
   b.vel.set(dirArr[0], dirArr[1] + 0.15, dirArr[2]).normalize().multiplyScalar(b.speed * b.boost * 1.1);
   b.homingT = 0; b.stunT = 0.35;   // flies straight for a moment before it turns back to its target
 }
+// auto-aim: the ball coming for you, otherwise the nearest ball in range
+function gunTargetBall(f) {
+  const mine = ballOn(f);
+  if (mine) return mine;
+  let best = null, bd = GUN_RANGE * GUN_RANGE;
+  for (const b of balls) {
+    if (b.state !== 'homing' || b.heldBy) continue;
+    const d = b.pos.distanceToSquared(f.pos);
+    if (d < bd) { bd = d; best = b; }
+  }
+  return best;
+}
 function shootGun(f) {
-  const o = V(), d = V();
-  gunRay(f, o, d);
-  const hit = gunHit(o, d);
-  f.gunEnd = hit ? o.clone().addScaledVector(d, hit.t) : o.clone().addScaledVector(d, GUN_RANGE * 0.6);
-  f.gunHitBall = hit ? hit.b : null;
-  if (!hit) return;
-  const b = hit.b, dir = [r3(d.x), r3(d.y), r3(d.z)];
+  const b = gunTargetBall(f);
+  if (!b) { if (f.kind === 'local') popup('No ball in range'); return false; }
+  const o = f.chest(V()), d = V().subVectors(b.pos, o).normalize();
+  f.gunEnd = b.pos.clone(); f.gunHitBall = b; f.gunAim = d.clone();
+  const dir = [r3(d.x), r3(d.y), r3(d.z)];
   const aim = f.kind === 'local' ? aimTarget() : null, slot = aim ? aim.slot : -1;
-  if (auth()) { gunApply(f, b, dir, slot); return; }
+  if (auth()) { gunApply(f, b, dir, slot); return true; }
   if (b.target === f) {
     // a guest's shot at a ball after them is a parry from range: report it like one and fly it right away
     net.pSeq++;
@@ -2798,11 +2830,12 @@ function shootGun(f) {
     if (aim) b.target = aim;
     parryFx(f, b, 0);
   } else net.rq = [++net.rqSeq, 5, b.serial, dir[0], dir[1], dir[2]];
+  return true;
 }
 // a tracer from the hand to where the shot ended, a muzzle flash, and sparks if it hit
 function gunFx(f, end, hitBall) {
   const c = new THREE.Color(ABILITY_BY_ID.gun.color), hand = V();
-  f.pivots[0].getWorldPosition(hand);
+  f.muzzle(hand, end);
   // a glowing streak (a thin stretched tube) that thins out and fades
   const len = Math.max(0.1, hand.distanceTo(end));
   const beam = new THREE.Mesh(tracerGeo, additive(c.clone().multiplyScalar(3.2), 1));
@@ -2967,7 +3000,7 @@ function useAbility(f) {
     if (game.state !== 'play') return false;
     if (auth()) addWarp(f); else netRequest(3);
   }
-  else if (A.id === 'gun') shootGun(f);
+  else if (A.id === 'gun') { if (!shootGun(f)) return false; }
   f.abCD = A.cd; f.abCount++;
   abilityFx(f, A.id, from);
   if (f.kind === 'local' && net.mode === 'online' && net.room) publishPresence(0, true);
@@ -3034,18 +3067,16 @@ function abilityFx(f, id, from = null) {
   } else if (id === 'warp') {
     warpDome(f, c);
   } else if (id === 'gun') {
-    let end = f.gunEnd, hitBall = f.gunHitBall;
+    let end = f.gunEnd, hitBall = f.gunHitBall, aimDir = f.gunAim;
     if (!end) {
-      // someone else fired: aim the tracer along where they face, ending at a ball if one is roughly in line
-      const o = f.chest(V()), d = V(Math.sin(f.facing), 0, Math.cos(f.facing));
-      end = o.clone().addScaledVector(d, 40); hitBall = null;
-      for (const b of balls) {
-        if (b.state !== 'homing') continue;
-        tmp2.subVectors(b.pos, o); const dist = tmp2.length();
-        if (dist < 60 && tmp2.normalize().dot(d) > 0.93) { end = b.pos.clone(); hitBall = b; break; }
-      }
+      // someone else fired: they aimed the same way, at the ball after them or the nearest one
+      const b = gunTargetBall(f), o = f.chest(V());
+      if (b) { end = b.pos.clone(); hitBall = b; }
+      else end = o.clone().add(V(Math.sin(f.facing) * 30, 0, Math.cos(f.facing) * 30));
+      aimDir = V().subVectors(end, o).normalize();
     }
-    f.gunEnd = null; f.gunHitBall = null;
+    f.gunEnd = null; f.gunHitBall = null; f.gunAim = null;
+    f.drawGun(aimDir);
     gunFx(f, end, hitBall);
     if (local) game.shake = Math.max(game.shake, 0.12);
   }
