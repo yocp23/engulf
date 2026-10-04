@@ -4007,10 +4007,24 @@ function beginCine(P) {
   else if (L && L.alive) earn(EARN.outlast);
   document.body.classList.add('cine');
   game.flash = 0.5; game.shake = 0.6;
-  sfx.impact(); sfx.slowmo();
+  try { sfx.impact(); sfx.slowmo(); } catch { /* no sound is fine */ }
   burst(P.from, v.color, 30, 7, 0.6, true);
   feed(v);
   renderRoster();
+}
+// A problem while following the host is shown in a small line at the bottom instead of failing silently,
+// so it can be reported (it's skipped and the game carries on)
+let netErrEl = null, netErrT = 0;
+function netError(e) {
+  const msg = String((e && (e.message || e)) || 'unknown').slice(0, 140);
+  if (!netErrEl) {
+    netErrEl = document.createElement('div');
+    netErrEl.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:99;max-width:70vw;font:600 11px/1.3 monospace;color:#ffb3b3;background:rgba(40,0,0,.7);padding:4px 7px;border-radius:4px;pointer-events:none';
+    document.body.appendChild(netErrEl);
+  }
+  netErrEl.textContent = 'Sync problem: ' + msg;
+  netErrEl.hidden = false;
+  clearTimeout(netErrT); netErrT = setTimeout(() => { netErrEl.hidden = true; }, 10000);
 }
 function updateCine(rdt) {
   const c = game.cine, v = c.victim, b = ball;
@@ -4636,7 +4650,7 @@ function applySnapshot(H) {
     pos: V(num(w[0]), num(w[1]), num(w[2])), vel: V(num(w[3]), num(w[4]), num(w[5])), radius: clamp(num(w[6], BALL_R0), 0.2, 6),
     speed: clamp(num(w[7], 16), 0, SPEED_MAX), target: num(w[8], -1) | 0, serial: num(w[9]), state: 1, frozen: num(w[10]) === 1, boost: num(w[11]) === 1, held: num(w[12], -1) | 0, t: performance.now(),
   } : null;
-  if (Array.isArray(H.dp) && num(H.dp[0]) > net.seenDeflects) {
+  if (Array.isArray(H.dp) && num(H.dp[0]) > net.seenDeflects) try {
     net.seenDeflects = num(H.dp[0]);
     const p = fighters[num(H.dp[1], -1) | 0], mode = clamp(num(H.dp[2]) | 0, 0, 3);
     if (p && p.active && p.kind !== 'local') {
@@ -4645,13 +4659,17 @@ function applySnapshot(H) {
       if (mode === 2 && net.twin && twin.state === 'off') { twin.pos.copy(net.twin.pos); splitFx(ball.pos); }
       parryFx(p, b, mode);
     }
-  }
+  } catch (e) { netError(e); }
   if (Array.isArray(H.cn) && num(H.cn[0]) > net.seenCine) {
     net.seenCine = num(H.cn[0]);
     const P = cineFromArray(H.cn);
-    if (P && fighters[P.victim].active) beginCine(P);
+    if (P && fighters[P.victim].active) { try { beginCine(P); } catch (e) { netError(e); } }
   }
-  // Hypervelocity, as the host sees it
+  try { applyHyperSnapshot(H); } catch (e) { netError(e); }
+  if (game.state === 'over' && num(H.win, -1) !== net.seenWin) { net.seenWin = num(H.win, -1); announceWinner(fighters[net.seenWin] || null); }
+}
+// Hypervelocity, as the host sees it
+function applyHyperSnapshot(H) {
   const hy = Array.isArray(H.hy) && H.hy.length >= 7 ? H.hy : null;
   if (hy && num(hy[0]) > (net.seenHyper || 0)) {
     net.seenHyper = num(hy[0]);
@@ -4663,7 +4681,6 @@ function applySnapshot(H) {
   if (hy && num(hy[1]) === 2 && game.hyperVis && (game.hyperVis.phase === 'impact' || game.hyperVis.phase === 'aim')) { game.hyperVis.dir.copy(game.hyperVis.want); hyperVisFire(); }
   if ((!hy || num(hy[1]) === 3) && game.hyperVis && game.hyperVis.phase !== 'end') hyperVisEnd();
   game.hyperCoast = !!hy && num(hy[1]) === 3;
-  if (game.state === 'over' && num(H.win, -1) !== net.seenWin) { net.seenWin = num(H.win, -1); announceWinner(fighters[net.seenWin] || null); }
 }
 function followNetBall(dt, rdt) {
   if (!net.ball || game.cine) return;
@@ -4798,7 +4815,7 @@ function netTick(rdt) {
     const pres = byPeer.get(net.hostPeer)?.presence;
     if (pres && pres !== net.lastHostPres && pres.H && typeof pres.H === 'object') {
       net.lastHostPres = pres; net.lastH = pres.H;
-      try { applySnapshot(pres.H); } catch { /* ignore a malformed snapshot */ }
+      try { applySnapshot(pres.H); } catch (e) { netError(e); }
     }
   }
   for (const f of fighters) {
