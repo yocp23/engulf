@@ -228,6 +228,8 @@ button.wcard:hover{transform:translateY(-2px)}
 .abcard p{margin:0;font-size:13px;line-height:1.42;color:var(--sand-dim);font-weight:600;flex:1}
 .abcard .btn{align-self:flex-start}
 .btn .gem{margin-right:2px;vertical-align:-1px}
+.abcard .ab-req{margin:0;font-size:12px;line-height:1.4;font-weight:700;color:#ffb36b;flex:0 0 auto}
+.abcard .ab-req.met{color:var(--rune)}
 .ab-on{font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--c);padding:11px 0 10px}
 .ab-chip{--c:var(--rune);display:inline-flex;align-items:center;gap:8px;font-weight:700;font-size:14px;color:var(--sand)}
 .ab-chip .ab-ico{width:30px;height:30px;border-radius:50%;color:var(--c);background:color-mix(in srgb,var(--c) 16%,var(--void));box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--c) 65%,transparent)}
@@ -1488,7 +1490,7 @@ const ABILITIES = [
   { id: 'blink', name: 'Phantom Step', price: 350, cd: 7, color: '#b98cff', desc: 'Teleport 10 m the way you move and leave an afterimage behind.' },
   { id: 'attract', name: 'Attract', price: 450, cd: 14, color: '#4f86ff', desc: 'Yank the nearest ball onto you. For 2.5 s your parries reach 50% further, so catch it and fire it where you want.' },
   { id: 'power', name: 'Power Slash', price: 500, cd: 10, color: '#ff5a2a', desc: 'A huge slash with double parry reach. The ball flies 40% faster until it reaches someone.' },
-  { id: 'gun', name: 'Gun', price: 1200, cd: 6, color: '#ffd23f', desc: 'Pull out a blaster that aims itself: it shoots the ball coming for you, or else the nearest ball. Yours is parried away to the player you aim at; any other gets blasted off course before it carries on after its target.' },
+  { id: 'gun', name: 'Gun', price: 3600, cd: 6, color: '#ffd23f', req: { wins: 5, kills: 15 }, desc: 'Pull out a blaster that aims itself: it shoots the ball coming for you, or else the nearest ball. Yours is parried away to the player you aim at; any other gets blasted off course before it carries on after its target.' },
   { id: 'phantom', name: 'Vanish', price: 550, cd: 15, color: '#a9b8ff', desc: 'Turn invisible for 4 s. A ball coming for you flies straight through you and picks someone else, and nobody can target you. Not allowed once only two players are left.' },
   { id: 'freeze', name: 'Frost Lock', price: 650, cd: 16, color: '#7fe8ff', desc: 'Freeze every ball in ice for 1.5 s. If a frozen ball is after you, walk up to it and hit it out of the ice whenever you like.' },
   { id: 'warp', name: 'Time Warp', price: 750, cd: 16, color: '#b4ff5a', desc: 'A 6 m bubble of slow time around you for 3.5 s. Balls crawl at a third of their speed inside it.' },
@@ -2424,7 +2426,7 @@ scene.add(targetRing, targetArrow, aimMarker, youRing, reachRing, twinRing, twin
 // The Claude link started over with fresh accounts (starter sword only); the downloaded file keeps its old saves.
 const ON_CLAUDE = !!(window.claude && typeof window.claude.use === 'function');
 const PROFILE_KEY = ON_CLAUDE ? 'engulf-link-v2' : 'pbb-profile', PROFILE_DOC = ON_CLAUDE ? 'profile-v2' : 'profile';
-const profile = { coins: START_COINS, owned: ['starter'], equipped: 'starter', wins: 0, rounds: 0, parries: 0, abilities: ['dash'], ability: 'dash' };
+const profile = { coins: START_COINS, owned: ['starter'], equipped: 'starter', wins: 0, rounds: 0, parries: 0, kills: 0, abilities: ['dash'], ability: 'dash' };
 function applyProfile(p) {
   if (!p || typeof p !== 'object') return;
   profile.coins = Math.max(0, Math.floor(num(p.coins, profile.coins)));
@@ -2432,13 +2434,14 @@ function applyProfile(p) {
   profile.owned = [...new Set(['starter', ...owned])];
   profile.equipped = profile.owned.includes(p.equipped) ? p.equipped : 'starter';
   profile.wins = Math.max(0, Math.floor(num(p.wins, profile.wins)));
+  profile.kills = Math.max(0, Math.floor(num(p.kills, profile.kills)));
   profile.rounds = Math.max(0, Math.floor(num(p.rounds, profile.rounds)));
   profile.parries = Math.max(0, Math.floor(num(p.parries, profile.parries)));
   const abs = Array.isArray(p.abilities) ? p.abilities.filter(id => ABILITY_BY_ID[id]) : [];
   profile.abilities = [...new Set(['dash', ...abs])];
   profile.ability = profile.abilities.includes(p.ability) ? p.ability : 'dash';
 }
-const profileData = () => ({ coins: profile.coins, owned: [...profile.owned], equipped: profile.equipped, wins: profile.wins, rounds: profile.rounds, parries: profile.parries, abilities: [...profile.abilities], ability: profile.ability });
+const profileData = () => ({ coins: profile.coins, owned: [...profile.owned], equipped: profile.equipped, wins: profile.wins, rounds: profile.rounds, parries: profile.parries, kills: profile.kills, abilities: [...profile.abilities], ability: profile.ability });
 // progress always goes to this browser first; a second copy guards against a half-written save
 const localSave = { ok: true, savedAt: 0 };
 function storeProfile() {
@@ -2592,7 +2595,7 @@ function placeAll() {
   act.forEach((f, i) => { const a = Math.PI / 2 + i / act.length * TAU, r = arenaR * 0.5; f.reset(Math.cos(a) * r, Math.sin(a) * r); });
 }
 function resetBall() {
-  warps.length = 0; ball.heldBy = twin.heldBy = null;
+  warps.length = 0; ball.sentBy = twin.sentBy = null; ball.heldBy = twin.heldBy = null;
   Object.assign(ball, { radius: BALL_R0, vr: BALL_R0, speed: D().speed0, kills: 0, state: 'idle', idleT: 99, target: null, homingT: 0, grace: 0, trailAcc: 0, boost: 1, frozenT: 0, predict: null });
   Object.assign(twin, { state: 'off', target: null, boost: 1, frozenT: 0, predict: null });
   ball.pos.set(0, BALL_R0 + 2, 0); ball.last.copy(ball.pos); ball.vel.set(0, 0, 0); ball.squash.set(1, 1, 1);
@@ -2721,7 +2724,7 @@ function stepBall(h, b = ball) {
 }
 // mode 0 = a normal parry, 1 = Power Slash, 2 = Splitting Slash
 function deflect(p, aimSlot = -1, dirArr = null, mode = 0, b = ball) {
-  b.frozenT = 0;
+  b.frozenT = 0; b.sentBy = p;
   b.speed = parrySpeed(b.speed);
   p.parryWindow = 0; p.parryCD = 0; p.parryMode = 0; p.reachMul = 1;
   let next = null;
@@ -2767,7 +2770,7 @@ function mergeBalls(hitter) {
   if (twin.state === 'off') return null;
   const other = hitter === ball ? twin : ball;
   const tw = [r2(other.pos.x), r2(other.pos.y), r2(other.pos.z), r3(other.radius)];
-  if (hitter === twin) { ball.pos.copy(twin.pos); ball.vel.copy(twin.vel); ball.last.copy(twin.pos); ball.radius = ball.vr = twin.radius; }
+  if (hitter === twin) { ball.pos.copy(twin.pos); ball.vel.copy(twin.vel); ball.last.copy(twin.pos); ball.radius = ball.vr = twin.radius; ball.sentBy = twin.sentBy; }
   ball.speed = Math.min(SPEED_MAX, Math.max(split.speed, Math.max(ball.speed, twin.speed) / SPLIT_SPEED));
   ball.boost = 1; ball.frozenT = 0;
   twin.state = 'off'; twin.target = null; twin.frozenT = 0; twin.predict = null;
@@ -2837,6 +2840,7 @@ function shootGun(f) {
     b.homingT = 0;
     b.predict = { serial: b.serial, until: performance.now() + 900, target: aim };
     if (aim) b.target = aim;
+    b.sentBy = f;
     parryFx(f, b, 0);
   } else net.rq = [++net.rqSeq, 5, b.serial, dir[0], dir[1], dir[2]];
   return true;
@@ -2870,6 +2874,8 @@ function gunFx(f, end, hitBall) {
 // the second half of Telekinesis: throw the held ball at whoever is under your aim
 function teleRelease(f) {
   f.teleHold = 0;
+  const held = balls.find(b => b.heldBy === f);
+  if (held) held.sentBy = f;
   const slot = f.kind === 'local' ? teleAimSlot() : -1;
   if (auth()) teleThrow(f, slot); else netRequest(4, slot);
   f.abCD = ABILITY_BY_ID.tele.cd; f.abCount++;
@@ -2933,6 +2939,7 @@ function teleThrow(f, slot) {
     next = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
   }
   if (!next) { setTarget(f, b); return; }
+  b.sentBy = f;
   next.chest(tmp2); tmp1.subVectors(tmp2, b.pos); tmp1.y = Math.max(tmp1.y, 0) + tmp1.length() * 0.2;
   tmp1.normalize();
   setTarget(next, b);
@@ -3387,6 +3394,12 @@ function cineFromArray(a) {
 function beginCine(P) {
   const v = fighters[P.victim];
   if (game.cine) endCine(true);
+  // a takedown: someone swallowed by a ball you were the last to send
+  const eater = P.tw && twin.state !== 'off' && twin.pos.distanceTo(P.from) < ball.pos.distanceTo(P.from) ? twin : ball;
+  const credit = eater.sentBy;
+  game.takedown = !!(credit && credit.kind === 'local' && credit !== v);
+  if (game.takedown) { profile.kills++; saveProfileSoon(); }
+  ball.sentBy = twin.sentBy = null;
   if (P.tw) {
     // the other half sticks around to flow into the ball during the cutscene
     Object.assign(twin, { state: 'merging', target: null, predict: null, frozenT: 0, boost: 1, radius: P.tw.r, vr: P.tw.r, wasFrozen: false });
@@ -3563,6 +3576,7 @@ function mergeStep(c, t) {
 }
 function endCine(interrupted) {
   const c = game.cine, v = c.victim;
+  if (game.takedown) { game.takedown = false; popup(`Takedown · ${profile.kills} total`); }
   if (twin.state === 'merging') twin.state = 'off';
   blobMesh.visible = false;
   game.cine = null; game.timeScale = 1; game.slow = 0;
@@ -4039,6 +4053,7 @@ function applySnapshot(H) {
     const p = fighters[num(H.dp[1], -1) | 0], mode = clamp(num(H.dp[2]) | 0, 0, 2);
     if (p && p.active && p.kind !== 'local') {
       const b = num(H.dp[3]) === 1 && net.twin ? twin : ball;
+      b.sentBy = p;
       if (mode === 2 && net.twin && twin.state === 'off') { twin.pos.copy(net.twin.pos); splitFx(ball.pos); }
       parryFx(p, b, mode);
     }
@@ -4102,7 +4117,7 @@ function clientChecks() {
       net.myParry = [b.serial, net.pSeq, aim ? aim.slot : -1, r3(tmp1.x), r3(tmp1.y), r3(tmp1.z), mode];
       net.reported.add(b.serial);
       if (net.reported.size > 64) net.reported.delete(net.reported.values().next().value);
-      L.parryWindow = 0; L.parryCD = 0; L.parryMode = 0; L.reachMul = 1;
+      L.parryWindow = 0; L.parryCD = 0; L.parryMode = 0; L.reachMul = 1; b.sentBy = L;
       b.speed = parrySpeed(b.speed); b.boost = mode === 1 ? POWER_BOOST : 1; b.frozenT = 0;
       b.vel.copy(tmp1).multiplyScalar(b.speed * b.boost);
       b.homingT = 0;
@@ -4669,7 +4684,7 @@ function refreshCoins() {
 function refreshProfileUi() {
   refreshCoins();
   $('equipCard').replaceChildren(weaponCard(WEAPON_BY_ID[profile.equipped], { badge: 'Equipped' }));
-  $('record').textContent = `Wins ${profile.wins} · Rounds ${profile.rounds} · Parries ${profile.parries} · ${profile.owned.length}/${WEAPONS.length} weapons`;
+  $('record').textContent = `Wins ${profile.wins} · Takedowns ${profile.kills} · Rounds ${profile.rounds} · Parries ${profile.parries} · ${profile.owned.length}/${WEAPONS.length} weapons`;
   refreshSaveNote();
   if (!$('armory').hidden) renderArmory();
   const A = ABILITY_BY_ID[profile.ability] || ABILITIES[0], chip = $('abChip');
@@ -4743,8 +4758,18 @@ function renderAbilities() {
     const meta = document.createElement('span'); meta.className = 'ab-meta'; meta.textContent = `${a.cd} s cooldown${a.price ? '' : ' · starter'}`;
     info.append(h, meta); top.append(ico, info);
     const d = document.createElement('p'); d.textContent = a.desc;
+    // some abilities have to be earned before they can be bought
+    const req = a.req, met = !req || (profile.wins >= req.wins && profile.kills >= req.kills);
+    let reqLine = null;
+    if (req && !owned) {
+      reqLine = document.createElement('p'); reqLine.className = 'ab-req' + (met ? ' met' : '');
+      reqLine.textContent = `${met ? 'Unlocked' : 'To unlock'}: ${req.wins} wins (${Math.min(profile.wins, req.wins)}/${req.wins}) · ${req.kills} takedowns (${Math.min(profile.kills, req.kills)}/${req.kills}). A takedown is anyone swallowed by a ball you sent.`;
+    }
     let act;
-    if (on) { act = document.createElement('span'); act.className = 'ab-on'; act.textContent = 'Equipped'; }
+    if (!owned && !met) {
+      act = document.createElement('button'); act.type = 'button'; act.className = 'btn small'; act.disabled = true;
+      act.textContent = `Locked · ${a.price}`;
+    } else if (on) { act = document.createElement('span'); act.className = 'ab-on'; act.textContent = 'Equipped'; }
     else if (owned) {
       act = document.createElement('button'); act.type = 'button'; act.className = 'btn cyan small'; act.textContent = 'Equip';
       act.addEventListener('click', () => equipAbility(a.id));
@@ -4753,7 +4778,7 @@ function renderAbilities() {
       act.innerHTML = '<i class="gem"></i>'; act.append(` Buy · ${a.price}`);
       act.addEventListener('click', () => buyAbility(a.id));
     }
-    card.append(top, d, act);
+    card.append(top, d, ...(reqLine ? [reqLine] : []), act);
     return card;
   }));
   $('abCollected').textContent = `${profile.abilities.length} of ${ABILITIES.length} unlocked`;
@@ -4761,6 +4786,7 @@ function renderAbilities() {
 function buyAbility(id) {
   const a = ABILITY_BY_ID[id];
   if (!a || profile.abilities.includes(id) || profile.coins < a.price) return;
+  if (a.req && (profile.wins < a.req.wins || profile.kills < a.req.kills)) return;
   profile.coins -= a.price;
   profile.abilities.push(id);
   profile.ability = id;
@@ -4941,7 +4967,7 @@ function flashSave(msg, undo) {
 function loadSave(data, msg) {
   const before = profileData();
   // start from a fresh profile so a save never mixes with what was here
-  Object.assign(profile, { coins: START_COINS, owned: ['starter'], equipped: 'starter', wins: 0, rounds: 0, parries: 0, abilities: ['dash'], ability: 'dash' });
+  Object.assign(profile, { coins: START_COINS, owned: ['starter'], equipped: 'starter', wins: 0, rounds: 0, parries: 0, kills: 0, abilities: ['dash'], ability: 'dash' });
   applyProfile(data.profile);
   const st = data.settings;
   if (st && typeof st === 'object') {
