@@ -2557,7 +2557,7 @@ function surfaceDist(f, b = ball) {
 function ballOn(f) {
   let best = null, bd = Infinity;
   for (const b of balls) {
-    if (b.state !== 'homing' || b.target !== f || b.heldBy) continue;
+    if (b.state !== 'homing' || b.target !== f || b.heldBy || (b === ball && game.hyperCoast)) continue;
     const d = b.pos.distanceToSquared(f.pos);
     if (d < bd) { bd = d; best = b; }
   }
@@ -2625,7 +2625,7 @@ function placeAll() {
   act.forEach((f, i) => { const a = Math.PI / 2 + i / act.length * TAU, r = arenaR * 0.5; f.reset(Math.cos(a) * r, Math.sin(a) * r); });
 }
 function resetBall() {
-  warps.length = 0; ball.hyper = null; game.hyperResume = null; if (game.hyperVis) { game.hyperVis = null; hyperLine.visible = false; } ball.sentBy = twin.sentBy = null; ball.heldBy = twin.heldBy = null;
+  warps.length = 0; ball.hyper = null; game.hyperResume = null; game.hyperCoast = false; if (game.hyperVis) { game.hyperVis = null; hyperLine.visible = false; } ball.sentBy = twin.sentBy = null; ball.heldBy = twin.heldBy = null;
   Object.assign(ball, { radius: BALL_R0, vr: BALL_R0, speed: D().speed0, kills: 0, state: 'idle', idleT: 99, target: null, homingT: 0, grace: 0, trailAcc: 0, boost: 1, frozenT: 0, predict: null });
   Object.assign(twin, { state: 'off', target: null, boost: 1, frozenT: 0, predict: null });
   ball.pos.set(0, BALL_R0 + 2, 0); ball.last.copy(ball.pos); ball.vel.set(0, 0, 0); ball.squash.set(1, 1, 1);
@@ -2839,14 +2839,26 @@ function endHyper(b) {
 function hyperEat(b, f) {
   const h = b.hyper;
   h.left--;
-  game.hyperResume = h.left > 0 ? { dir: h.dir.clone(), left: h.left, shooter: h.shooter, seq: h.seq, aim: h.aim } : null;
+  // after its last meal the shot doesn't stop dead: it coasts on along the line and slows to a halt
+  game.hyperResume = { dir: h.dir.clone(), left: h.left, shooter: h.shooter, seq: h.seq, aim: h.aim, coast: h.left <= 0 };
   b.hyper = null;
-  if (!game.hyperResume) hyperVisEnd();
+  if (h.left <= 0) hyperVisEnd();
   startEngulf(f, b);
 }
 function hyperStep(b, dt) {
   const h = b.hyper;
   if (h.phase === 'charge') { b.vel.set(0, 0, 0); return; }
+  if (h.phase === 'coast') {
+    // spent: drift on, settle to hovering height and slow to a stop; it can't swallow anyone now
+    h.v *= Math.exp(-2.2 * dt);
+    b.pos.addScaledVector(h.dir, h.v * dt);
+    b.pos.y += (b.radius + 2 - b.pos.y) * damp(2, dt);
+    const r = Math.hypot(b.pos.x, b.pos.z), lim = arenaR - b.radius - 1;
+    if (r > lim) { b.pos.x *= lim / r; b.pos.z *= lim / r; h.v *= Math.exp(-10 * dt); }
+    b.vel.copy(h.dir).multiplyScalar(h.v);
+    if (h.v < 0.6) { b.hyper = null; game.hyperCoast = false; b.state = 'idle'; b.target = null; b.idleT = 0.9; b.vel.set(0, 0, 0); }
+    return;
+  }
   const steps = Math.max(1, Math.ceil(SPEED_MAX * dt / 0.3)), hs = dt / steps;
   for (let i = 0; i < steps; i++) {
     b.pos.addScaledVector(h.dir, SPEED_MAX * hs);
@@ -2873,8 +2885,9 @@ function hyperResume() {
   ball.target = R.aim && R.aim.active && R.aim.alive ? R.aim : alive[0];
   ball.serial = ++serialCtr;
   ball.pos.addScaledVector(R.dir, ball.radius + 1.2); ball.pos.y = Math.max(ball.radius + 0.4, 1.3);
-  ball.hyper = { phase: 'fly', t: 0, dir: R.dir, left: R.left, shooter: R.shooter, seq: R.seq, aim: R.aim };
-  ball.vel.copy(R.dir).multiplyScalar(SPEED_MAX);
+  ball.hyper = { phase: R.coast ? 'coast' : 'fly', t: 0, dir: R.dir, left: R.left, shooter: R.shooter, seq: R.seq, aim: R.aim, v: SPEED_MAX * 0.45 };
+  ball.vel.copy(R.dir).multiplyScalar(R.coast ? ball.hyper.v : SPEED_MAX);
+  game.hyperCoast = !!R.coast;
   return true;
 }
 
@@ -4119,7 +4132,8 @@ function hostSnapshot() {
     dp: [game.deflects, game.lastParrier, game.lastMode || 0, game.lastBall || 0], cn: game.lastCine, win: game.winner,
     hy: ball.hyper || game.hyperResume ? (() => {
       const h = ball.hyper || game.hyperResume, from = game.hyperVis ? game.hyperVis.from : ball.pos;
-      return [h.seq, ball.hyper && ball.hyper.phase === 'charge' ? 1 : 2, r2(from.x), r2(from.z), r3(h.dir.x), r3(h.dir.z), h.shooter ? h.shooter.slot : -1];
+      const ph = ball.hyper ? (ball.hyper.phase === 'charge' ? 1 : ball.hyper.phase === 'coast' ? 3 : 2) : (h.coast ? 3 : 2);
+      return [h.seq, ph, r2(from.x), r2(from.z), r3(h.dir.x), r3(h.dir.z), h.shooter ? h.shooter.slot : -1];
     })() : null,
   };
 }
@@ -4256,7 +4270,8 @@ function applySnapshot(H) {
     hyperVisStart(net.seenHyper, V(num(hy[2]), 0, num(hy[3])), V(num(hy[4]), 0, num(hy[5])), shooter);
   }
   if (hy && num(hy[1]) === 2 && game.hyperVis && game.hyperVis.phase === 'charge') hyperVisFire();
-  if (!hy && game.hyperVis && game.hyperVis.phase !== 'end') hyperVisEnd();
+  if ((!hy || num(hy[1]) === 3) && game.hyperVis && game.hyperVis.phase !== 'end') hyperVisEnd();
+  game.hyperCoast = !!hy && num(hy[1]) === 3;
   if (game.state === 'over' && num(H.win, -1) !== net.seenWin) { net.seenWin = num(H.win, -1); announceWinner(fighters[net.seenWin] || null); }
 }
 function followNetBall(dt, rdt) {
@@ -4299,6 +4314,7 @@ function clientChecks() {
   for (const b of balls) {
     const hyperFly = b === ball && game.hyperVis && game.hyperVis.phase === 'fly' && !(game.hyperVis.shooter === L);
     if (b.state !== 'homing' || (b.target !== L && !hyperFly) || b.predict || b.heldBy || net.reported.has(b.serial)) continue;
+    if (b === ball && game.hyperCoast) continue;   // the spent shot coasting to a stop can't hurt anyone
     if (L.ghostT > 0) continue;   // invisible: it goes straight through you, the host retargets it
     const sd = surfaceDist(L, b), frozen = b.frozenT > 0;
     const parry = L.parryWindow > 0 && sd <= parryReach(b) * L.reachMul * (L.catchT > 0 ? CATCH_REACH : 1);
@@ -5348,7 +5364,7 @@ function updateHud(rdt) {
 }
 function updateMarkers(rdt) {
   const T = game.realTime, L = localF();
-  const t = ball.state === 'homing' && !ball.heldBy ? ball.target : null;
+  const t = ball.state === 'homing' && !ball.heldBy && !game.hyperCoast ? ball.target : null;
   targetRing.visible = targetArrow.visible = !!t;
   if (t) {
     const k = 2;
