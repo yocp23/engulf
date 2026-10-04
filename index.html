@@ -518,7 +518,7 @@ const GRAVITY = 26;
 const FOV = 62;
 const SHOULDER = 1.15;       // shift-lock camera offset to the right
 const SLOTS = 8;
-const PROTO = 5;             // online message format version
+const PROTO = 6;             // online message format version
 const START_COINS = 200;
 const EARN = { parry: 4, outlast: 8, round: 10, win: 120 };
 const WSCALE = 1.28;         // weapon size relative to its modelled size
@@ -1398,6 +1398,10 @@ const sfx = (() => {
         [2637, 3136, 3951, 4699].forEach((f, i) => tone({ f0: f, dur: 0.5, type: 'sine', vol: 0.05 * v, delay: i * 0.035 }));
         noise({ dur: 0.4, vol: 0.2 * v, type: 'highpass', f0: 6000, f1: 2500 });
         tone({ f0: 300, f1: 80, dur: 0.4, type: 'triangle', vol: 0.2 * v });
+      } else if (id === 'gun') {
+        noise({ dur: 0.07, vol: 0.5 * v, type: 'highpass', f0: 2200 });
+        tone({ f0: 190, f1: 42, dur: 0.18, type: 'square', vol: 0.18 * v, lp: 1400, bus: 'crunch' });
+        noise({ dur: 0.3, vol: 0.12 * v, type: 'bandpass', f0: 900, f1: 260, q: 0.8 });
       } else if (id === 'attract') {
         tone({ f0: 90, f1: 380, dur: 0.5, type: 'sawtooth', vol: 0.05 * v, lp: 900 });
         tone({ f0: 180, f1: 760, dur: 0.45, type: 'sine', vol: 0.08 * v });
@@ -1423,6 +1427,12 @@ const sfx = (() => {
     thaw() { noise({ dur: 0.35, vol: 0.45, type: 'highpass', f0: 3000, f1: 7000 }); tone({ f0: 1400, f1: 300, dur: 0.25, type: 'sine', vol: 0.14 }); noise({ dur: 0.08, vol: 0.4, type: 'bandpass', f0: 5000, q: 2, delay: 0.05 }); },
     block() { tone({ f0: 784, dur: 0.5, type: 'triangle', vol: 0.3 }); tone({ f0: 1175, dur: 0.6, type: 'triangle', vol: 0.2, delay: 0.03 }); noise({ dur: 0.35, vol: 0.45, type: 'highpass', f0: 3000 }); tone({ f0: 130, f1: 60, dur: 0.3, type: 'sine', vol: 0.6, bus: 'crunch' }); },
     // two droplets meeting: a wet stretch, then a deep blooping gulp
+    // a bullet striking the ball: a hard ping and a crack
+    gunHit(v = 1) {
+      tone({ f0: 2600, f1: 1700, dur: 0.22, type: 'sine', vol: 0.16 * v });
+      tone({ f0: 3900, f1: 3500, dur: 0.12, type: 'sine', vol: 0.08 * v });
+      noise({ dur: 0.05, vol: 0.5 * v, type: 'bandpass', f0: 3200, q: 1.5, bus: 'crunch' });
+    },
     merge() {
       tone({ f0: 180, f1: 520, dur: 0.35, type: 'sine', vol: 0.35 });
       tone({ f0: 520, f1: 140, dur: 0.3, type: 'sine', vol: 0.45, delay: 0.3 });
@@ -1478,6 +1488,7 @@ const ABILITIES = [
   { id: 'blink', name: 'Phantom Step', price: 350, cd: 7, color: '#b98cff', desc: 'Teleport 10 m the way you move and leave an afterimage behind.' },
   { id: 'attract', name: 'Attract', price: 450, cd: 14, color: '#4f86ff', desc: 'Yank the nearest ball onto you. For 2.5 s your parries reach 50% further, so catch it and fire it where you want.' },
   { id: 'power', name: 'Power Slash', price: 500, cd: 10, color: '#ff5a2a', desc: 'A huge slash with double parry reach. The ball flies 40% faster until it reaches someone.' },
+  { id: 'gun', name: 'Gun', price: 600, cd: 6, color: '#ffd23f', desc: 'Shoot where your crosshair points. Hit a ball coming for you and it is parried back the way you shot it. Hit a ball chasing someone else and it gets blasted off course before it carries on after them.' },
   { id: 'phantom', name: 'Vanish', price: 550, cd: 15, color: '#a9b8ff', desc: 'Turn invisible for 4 s. A ball coming for you flies straight through you and picks someone else, and nobody can target you. Not allowed once only two players are left.' },
   { id: 'freeze', name: 'Frost Lock', price: 650, cd: 16, color: '#7fe8ff', desc: 'Freeze every ball in ice for 1.5 s. If a frozen ball is after you, walk up to it and hit it out of the ice whenever you like.' },
   { id: 'warp', name: 'Time Warp', price: 750, cd: 16, color: '#b4ff5a', desc: 'A 6 m bubble of slow time around you for 3.5 s. Balls crawl at a third of their speed inside it.' },
@@ -1496,6 +1507,7 @@ const AB_ICONS = {
   freeze: '<path d="M12 2v20M3.3 7l17.4 10M3.3 17L20.7 7"/><path d="M9.5 3.5L12 6l2.5-2.5M9.5 20.5L12 18l2.5 2.5"/>',
   shield: '<path d="M12 3l7.5 3v6c0 4.6-3.2 7.8-7.5 9-4.3-1.2-7.5-4.4-7.5-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
   split: '<path d="M12 21v-8M12 13L5.5 5.5M12 13l6.5-7.5"/><circle cx="5" cy="5" r="2.2"/><circle cx="19" cy="5" r="2.2"/>',
+  gun: '<path d="M3 8h15l2 2v2H10l-1.2 5H5.4l1.2-5H3z"/><path d="M18 8V6h2.5M13 12v2"/>',
   attract: '<path d="M6 3v8a6 6 0 0 0 12 0V3"/><path d="M6 7h4M14 7h4"/><path d="M12 21v-2"/>',
   phantom: '<path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z"/><circle cx="12" cy="12" r="2.5"/><path d="M4 20L20 4"/>',
   warp: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6"/>',
@@ -2609,7 +2621,7 @@ function announceWinner(w) {
 
 /* ================= ball logic (runs on the page in charge) ================= */
 function setTarget(f, b = ball) {
-  b.target = f; b.serial = ++serialCtr; b.homingT = 0; b.grace = 0; b.state = 'homing'; b.boost = 1;
+  b.target = f; b.serial = ++serialCtr; b.homingT = 0; b.grace = 0; b.state = 'homing'; b.boost = 1; b.stunT = 0;
   if (f.kind === 'local') sfx.alarm();
 }
 function launchBall() {
@@ -2730,6 +2742,89 @@ function freezeBalls() {
 }
 
 /* ================= abilities ================= */
+const tracerGeo = new THREE.CylinderGeometry(0.085, 0.085, 1, 8, 1, true), UP_Y = new THREE.Vector3(0, 1, 0);
+// Gun: a hitscan shot. You aim with the crosshair (the middle of the screen); bots aim at the ball after them.
+const GUN_RANGE = 70;
+function gunRay(f, origin, dir) {
+  if (f.kind === 'local') { origin.copy(camera.position); camera.getWorldDirection(dir); }
+  else {
+    f.chest(origin);
+    const b = ballOn(f);
+    if (b) dir.subVectors(b.pos, origin).normalize(); else dir.set(Math.sin(f.facing), 0, Math.cos(f.facing));
+  }
+}
+// the first ball the shot meets (balls count as a little bigger than they look), and where
+function gunHit(origin, dir) {
+  let best = null, bt = GUN_RANGE;
+  for (const b of balls) {
+    if (b.state !== 'homing' || b.heldBy) continue;
+    const ox = b.pos.x - origin.x, oy = b.pos.y - origin.y, oz = b.pos.z - origin.z;
+    const tca = ox * dir.x + oy * dir.y + oz * dir.z;
+    if (tca < 0) continue;
+    const R = b.radius + 0.55, d2 = ox * ox + oy * oy + oz * oz - tca * tca;
+    if (d2 > R * R) continue;
+    const th = tca - Math.sqrt(R * R - d2);
+    if (th < bt) { bt = th; best = b; }
+  }
+  return best ? { b: best, t: bt } : null;
+}
+// what a hit does: a ball after the shooter is parried along the shot; any other is knocked off course
+function gunApply(f, b, dirArr, aimSlot) {
+  if (!b || b.state !== 'homing' || b.heldBy) return;
+  if (b.target === f) { deflect(f, aimSlot, dirArr, 0, b); return; }
+  b.frozenT = 0;
+  b.vel.set(dirArr[0], dirArr[1] + 0.15, dirArr[2]).normalize().multiplyScalar(b.speed * b.boost * 1.1);
+  b.homingT = 0; b.stunT = 0.35;   // flies straight for a moment before it turns back to its target
+}
+function shootGun(f) {
+  const o = V(), d = V();
+  gunRay(f, o, d);
+  const hit = gunHit(o, d);
+  f.gunEnd = hit ? o.clone().addScaledVector(d, hit.t) : o.clone().addScaledVector(d, GUN_RANGE * 0.6);
+  f.gunHitBall = hit ? hit.b : null;
+  if (!hit) return;
+  const b = hit.b, dir = [r3(d.x), r3(d.y), r3(d.z)];
+  const aim = f.kind === 'local' ? aimTarget() : null, slot = aim ? aim.slot : -1;
+  if (auth()) { gunApply(f, b, dir, slot); return; }
+  if (b.target === f) {
+    // a guest's shot at a ball after them is a parry from range: report it like one and fly it right away
+    net.pSeq++;
+    net.myParry = [b.serial, net.pSeq, slot, dir[0], dir[1], dir[2], 0];
+    net.reported.add(b.serial);
+    b.speed = parrySpeed(b.speed); b.boost = 1; b.frozenT = 0;
+    b.vel.set(dir[0], dir[1], dir[2]).multiplyScalar(b.speed);
+    b.homingT = 0;
+    b.predict = { serial: b.serial, until: performance.now() + 900, target: aim };
+    if (aim) b.target = aim;
+    parryFx(f, b, 0);
+  } else net.rq = [++net.rqSeq, 5, b.serial, dir[0], dir[1], dir[2]];
+}
+// a tracer from the hand to where the shot ended, a muzzle flash, and sparks if it hit
+function gunFx(f, end, hitBall) {
+  const c = new THREE.Color(ABILITY_BY_ID.gun.color), hand = V();
+  f.pivots[0].getWorldPosition(hand);
+  // a glowing streak (a thin stretched tube) that thins out and fades
+  const len = Math.max(0.1, hand.distanceTo(end));
+  const beam = new THREE.Mesh(tracerGeo, additive(c.clone().multiplyScalar(3.2), 1));
+  beam.position.lerpVectors(hand, end, 0.5);
+  beam.quaternion.setFromUnitVectors(UP_Y, tmp2.subVectors(end, hand).normalize());
+  beam.renderOrder = 11;
+  const core = new THREE.Mesh(tracerGeo, additive(WHITE.clone().multiplyScalar(3), 1));
+  beam.add(core); core.scale.set(0.4, 1, 0.4);
+  addFx(beam, 0.22, false, k => {
+    const w = 1 - k;
+    beam.scale.set(w, len, w);
+    beam.material.opacity = w; core.material.opacity = w * w;
+  }, () => { beam.material.dispose(); core.material.dispose(); });
+  impactFlash(hand, c, 0.6);
+  if (hitBall) {
+    impactFlash(end, c, 1.1 + hitBall.vr * 0.4);
+    burst(end, c, 26, 12, 0.35, false, 0.16);
+    burst(end, WHITE, 10, 8, 0.25, false, 0.1);
+    const vol = f.kind === 'local' ? 1 : clamp(1.2 - camera.position.distanceTo(end) / 50, 0.2, 0.9);
+    sfx.gunHit(vol);
+  }
+}
 // the second half of Telekinesis: throw the held ball at whoever is under your aim
 function teleRelease(f) {
   f.teleHold = 0;
@@ -2872,6 +2967,7 @@ function useAbility(f) {
     if (game.state !== 'play') return false;
     if (auth()) addWarp(f); else netRequest(3);
   }
+  else if (A.id === 'gun') shootGun(f);
   f.abCD = A.cd; f.abCount++;
   abilityFx(f, A.id, from);
   if (f.kind === 'local' && net.mode === 'online' && net.room) publishPresence(0, true);
@@ -2937,6 +3033,21 @@ function abilityFx(f, id, from = null) {
     if (local) game.shake = Math.max(game.shake, 0.2);
   } else if (id === 'warp') {
     warpDome(f, c);
+  } else if (id === 'gun') {
+    let end = f.gunEnd, hitBall = f.gunHitBall;
+    if (!end) {
+      // someone else fired: aim the tracer along where they face, ending at a ball if one is roughly in line
+      const o = f.chest(V()), d = V(Math.sin(f.facing), 0, Math.cos(f.facing));
+      end = o.clone().addScaledVector(d, 40); hitBall = null;
+      for (const b of balls) {
+        if (b.state !== 'homing') continue;
+        tmp2.subVectors(b.pos, o); const dist = tmp2.length();
+        if (dist < 60 && tmp2.normalize().dot(d) > 0.93) { end = b.pos.clone(); hitBall = b; break; }
+      }
+    }
+    f.gunEnd = null; f.gunHitBall = null;
+    gunFx(f, end, hitBall);
+    if (local) game.shake = Math.max(game.shake, 0.12);
   }
 }
 // a crackling line from a player to a ball that follows both for a moment
@@ -3111,6 +3222,7 @@ function simBall(dt) {
         const t = botChooseTarget(null);
         if (t) setTarget(t, twin); else { twin.state = 'off'; continue; }
       }
+      if (b.stunT > 0) { b.stunT -= dt; b.pos.addScaledVector(b.vel, dt); continue; }
       if (b.heldBy) {
         const hd = b.heldBy;
         if (!hd.active || !hd.alive) b.heldBy = null;
@@ -3482,6 +3594,7 @@ function botThink(b, dt) {
     if (b.useAb && b.abCD <= 0 && tb.frozenT <= 0) {
       // rescue abilities come out when a bot is about to fail; movement ones now and then
       if ((id === 'shield' && b.plan !== 'good' && sd <= reach * 3) || ((id === 'freeze' || id === 'warp') && b.plan !== 'good' && sd <= reach * 4)
+        || (id === 'gun' && b.plan !== 'good' && sd <= 14 && sd > reach)
         || ((id === 'dash' || id === 'leap' || id === 'blink') && sd > 6 && Math.random() < dt * 1.2)) {
         useAbility(b); b.useAb = false;
         if (id === 'freeze' || id === 'warp') b.planSerial = -1;   // think again with more time
@@ -3989,6 +4102,11 @@ function hostReadReports(f, P) {
     if (kind === 1) attractBall(f);
     else if (kind === 2) teleGrab(f);
     else if (kind === 4) teleThrow(f, num(rq[2], -1) | 0);
+    else if (kind === 5) {
+      const b = balls.find(x => x.state === 'homing' && x.serial === num(rq[2], -1));
+      const d = [num(rq[3]), num(rq[4]), num(rq[5])];
+      if (b && b.target !== f && Math.hypot(d[0], d[1], d[2]) > 0.5) gunApply(f, b, d, -1);
+    }
     else if (kind === 3) addWarp(f);
   }
 }
