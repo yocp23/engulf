@@ -3241,6 +3241,13 @@ function hyperVisEnd() {
 // runs every frame for everyone (the host also moves the shot from charge to fly here)
 function hyperTick(rdt) {
   const H = game.hyperVis;
+  // anyone's swing that the current shot isn't driving: let a follow-through play out, drop anything else
+  for (const f of fighters) {
+    const a = f.hyperAnim;
+    if (!a || (H && H.shooter === f)) continue;
+    if (a.stage === 'release') { a.t += rdt; a.dtReal = rdt; if (a.t > 1.0) f.hyperAnim = null; }
+    else f.hyperAnim = null;
+  }
   if (!H) { hyperLine.visible = false; hyperRing.visible = false; return; }
   H.t += rdt;
   const T = game.realTime;
@@ -5672,6 +5679,7 @@ function updateHud(rdt) {
       el.abilIcon.innerHTML = abilityIcon(A.id, 24);
       setText(el.abilName, A.name);
       el.tDash.innerHTML = `${abilityIcon(A.id, 24)}<span>${A.name}</span>`;
+      el.tDash.lastChild.style.fontSize = A.name.length > 8 ? `calc(8.5px * var(--tu) * ${(8 / A.name.length).toFixed(3)})` : '';   // long names shrink to fit
     }
     el.abilRing.style.setProperty('--cd', acd); el.tDash.style.setProperty('--cd', acd);
     const off = A.id === 'phantom' && game.state === 'play' && aliveCount() <= 2;
