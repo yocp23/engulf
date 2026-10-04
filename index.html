@@ -2066,7 +2066,7 @@ class Fighter {
     this.model.scale.set(1, 1, 1); this.model.rotation.set(0, 0, 0); this.model.position.set(0, 0, 0);
     this.parryWindow = 0; this.parryCD = 0; this.dashCD = 0; this.dashT = 0; this.swingT = 9; this.lastSwingT = 9;
     this.abCD = 0; this.shieldT = 0; this.parryMode = 0; this.reachMul = 1; this.ghostT = 0; this.catchT = 0; this.teleHold = 0;
-    this.gunT = 0; this.aimGun(0);
+    this.gunT = 0; this.aimGun(0); this.swingHold = false;
     this.applyGhost();
     this.walk = 0; this.land = 0; this.think = 0; this.pace = 0.6; this.strafe = Math.random() < 0.5 ? 1 : -1;
     this.plan = 'none'; this.planSerial = -1; this.react = 0;
@@ -2128,7 +2128,7 @@ class Fighter {
   }
   update(dt, rdt) {
     if (!this.active || !this.alive) return;
-    this.swingT += dt;
+    if (this.swingHold) this.swingT = HYPER_SWING; else this.swingT += dt;
     this.parryCD = Math.max(0, this.parryCD - dt);
     this.abCD = Math.max(0, this.abCD - dt);
     if (this.shieldT > 0) this.shieldT = Math.max(0, this.shieldT - dt);
@@ -2829,16 +2829,30 @@ function startHyper(p, b, next, look = null) {
   dir.y = 0;
   if (dir.lengthSq() < 1e-4) dir.set(Math.sin(p.facing), 0, Math.cos(p.facing));
   dir.normalize();
-  // the strike: the ball sits right at the blade's edge and the blade is caught mid-slash
-  tmp1.subVectors(b.pos, p.pos); tmp1.y = 0;
-  if (tmp1.lengthSq() < 1e-4) tmp1.set(Math.sin(p.facing), 0, Math.cos(p.facing));
-  tmp1.normalize();
-  b.pos.set(p.pos.x + tmp1.x * (1.45 + b.radius), Math.max(b.radius + 0.3, p.pos.y + 1.3), p.pos.z + tmp1.z * (1.45 + b.radius));
-  p.swingT = 0.13; p.lastSwingT = 0.13;
-  spawnSlashWave(p, 0);
+  // the strike: the blade is caught mid-slash with the ball pressed against its edge
+  p.swingT = HYPER_SWING; p.lastSwingT = HYPER_SWING; p.swingHold = true;
+  p.group.rotation.y = p.facing; p.applyPose(HYPER_SWING);
+  hyperHoldPoint(p, dir, b);
   b.vel.set(0, 0, 0);
   b.hyper = { phase: 'impact', t: 0, dir, left: HYPER_PIERCE, shooter: p, seq: game.hyperSeq, aim: next };
   hyperVisStart(game.hyperSeq, b.pos, dir, p);
+}
+const HYPER_SWING = 0.15;   // the moment of the slash where the blade sweeps across the front
+// the point on the blade that's pressing the ball: about four fifths of the way to the tip
+const _hpTip = V(), _hpBase = V();
+function bladeContact(p, out) {
+  const h = p.hands[0];
+  if (!h) return p.chest(out).add(tmp4.set(Math.sin(p.facing) * 1.6, 0, Math.cos(p.facing) * 1.6));
+  p.group.updateMatrixWorld(true);
+  h.group.localToWorld(_hpTip.copy(h.tipRaw)); h.group.localToWorld(_hpBase.copy(h.baseRaw));
+  return out.lerpVectors(_hpBase, _hpTip, 0.8);
+}
+// the ball pressed against the blade, pushed a little the way it's aimed; as the hitter turns, it turns with them
+const _hpC = V();
+function hyperHoldPoint(p, dir, b) {
+  bladeContact(p, _hpC);
+  b.pos.copy(_hpC).addScaledVector(dir, b.radius * 0.85);
+  b.pos.y = Math.max(b.radius + 0.3, _hpC.y + 0.1);
 }
 // where the hitter is aiming right now: your camera, a guest's facing (which follows their camera), a bot's pick
 function hyperAimDir(h, out) {
@@ -2887,6 +2901,7 @@ function hyperStep(b, dt) {
     b.vel.set(0, 0, 0);
     h.t += dt;
     if (h.phase === 'aim') hyperAimDir(h, h.dir);
+    if (h.shooter.alive) hyperHoldPoint(h.shooter, h.dir, b);
     return;
   }
   if (h.phase === 'coast') {
@@ -2984,9 +2999,33 @@ function hyperVisAim() {
   H.len = hyperLineSet(H.from, H.dir);
   sfx.hyperCharge(HYPER_AIM);
 }
+// metal on the ball: a fountain of sparks from where the blade presses, with the odd bright crackle
+function hyperSparks(H, rdt) {
+  const d = H.dir;
+  // right where the blade meets the ball
+  bladeContact(H.shooter, tmp3);
+  const cx = tmp3.x, cy = tmp3.y, cz = tmp3.z;
+  const slow = H.phase === 'impact' ? 0.35 : 1;
+  const n = H.phase === 'impact' ? 4 : 7;
+  for (let i = 0; i < n; i++) {
+    // sprayed up and out to the sides of the blade, falling under gravity
+    const side = rand(-1, 1), up = rand(0.3, 1.4), back = rand(-0.6, 0.4);
+    const sp = rand(5, 13) * slow;
+    emit({ x: cx, y: cy, z: cz, vx: (d.z * side + d.x * back) * sp, vy: up * sp, vz: (-d.x * side + d.z * back) * sp,
+      life: rand(0.25, 0.55), max: 0.55, s0: rand(0.07, 0.14), s1: 0.01, r: 3.2, g: rand(1.8, 2.6), b: 0.9, a: 1, drag: 1.5, grav: 22 * slow, real: true });
+  }
+  H.flick = (H.flick || 0) - rdt;
+  if (H.flick <= 0) { H.flick = rand(0.07, 0.16); impactFlash(tmp4.set(cx, cy, cz), SPARK, rand(0.35, 0.6), true); }
+}
 function hyperVisFire() {
   const H = game.hyperVis;
   if (!H || H.phase === 'fly') return;
+  if (H.shooter) {
+    // the slash follows through as the ball leaves
+    H.shooter.swingHold = false;
+    H.shooter.swingT = HYPER_SWING;
+    spawnSlashWave(H.shooter, 0);
+  }
   if (H.phase === 'impact') hyperVisAim();
   H.phase = 'fly'; H.t = 0;
   hyperLine.visible = true; H.len = hyperLineSet(H.from, H.dir);
@@ -2999,6 +3038,7 @@ function hyperVisFire() {
 }
 function hyperVisEnd() {
   if (!game.hyperVis) return;
+  if (game.hyperVis.shooter) game.hyperVis.shooter.swingHold = false;
   game.hyperVis.phase = 'end'; game.hyperVis.t = 0;
   hyperRing.visible = false;
 }
@@ -3008,10 +3048,12 @@ function hyperTick(rdt) {
   if (!H) { hyperLine.visible = false; hyperRing.visible = false; return; }
   H.t += rdt;
   const T = game.realTime;
+  if (H.shooter && (H.phase === 'impact' || H.phase === 'aim')) {
+    H.shooter.swingHold = true;
+    H.from.set(ball.pos.x, 0.07, ball.pos.z);
+    hyperSparks(H, rdt);
+  }
   if (H.phase === 'impact') {
-    // embers drifting off the strike in slow motion
-    if (Math.random() < 0.6) emit({ x: ball.pos.x + rand(-0.5, 0.5), y: ball.pos.y + rand(-0.5, 0.5), z: ball.pos.z + rand(-0.5, 0.5), vx: rand(-0.6, 0.6), vy: rand(0, 0.8), vz: rand(-0.6, 0.6),
-      life: 0.9, max: 0.9, s0: 0.16, s1: 0.02, r: 3, g: 1.4, b: 1.6, a: 1, drag: 0.5, grav: 0, real: true });
     if (auth() && ball.hyper && ball.hyper.phase === 'impact' && H.t >= HYPER_IMPACT) { ball.hyper.phase = 'aim'; ball.hyper.t = 0; hyperVisAim(); }
   } else if (H.phase === 'aim') {
     // the line swings with the hitter's aim: your own camera if it's you, the host's word for anyone else
@@ -4371,6 +4413,8 @@ function followNetBall(dt, rdt) {
   if (!net.ball || game.cine) return;
   ball.kills = net.ball.kills;
   followNet(ball, net.ball, dt, rdt);
+  const HV = game.hyperVis, me = localF();
+  if (HV && me && HV.shooter === me && (HV.phase === 'impact' || HV.phase === 'aim')) hyperHoldPoint(me, HV.dir, ball);
   if (net.twin) {
     if (twin.state === 'off') { twin.pos.copy(net.twin.pos); twin.last.copy(twin.pos); twin.trailAcc = 0; twin.wasFrozen = false; }
     followNet(twin, net.twin, dt, rdt);
