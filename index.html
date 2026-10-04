@@ -1359,13 +1359,13 @@ const sfx = (() => {
     node.connect(g); g.connect(bus === 'crunch' ? crunch : bus === 'music' ? mFilter : sBus);
     o.start(t0); o.stop(t0 + dur + 0.05);
   }
-  function noise({ dur = 0.2, vol = 0.2, type = 'bandpass', f0 = 1000, f1 = f0, q = 1, delay = 0, bus = null, at = 0 }) {
+  function noise({ dur = 0.2, vol = 0.2, type = 'bandpass', f0 = 1000, f1 = f0, q = 1, delay = 0, bus = null, at = 0, attack = 0.002 }) {
     if (!ctx) return;
     const t0 = at || ctx.currentTime + delay;
-    const s = ctx.createBufferSource(); s.buffer = noiseBuf;
+    const s = ctx.createBufferSource(); s.buffer = noiseBuf; s.loop = true;
     const f = ctx.createBiquadFilter(); f.type = type; f.Q.value = q;
     f.frequency.setValueAtTime(f0, t0); if (f1 !== f0) f.frequency.exponentialRampToValueAtTime(f1, t0 + dur);
-    const g = ctx.createGain(); env(g, t0, vol, 0.002, dur);
+    const g = ctx.createGain(); env(g, t0, vol, attack, dur);
     s.connect(f); f.connect(g); g.connect(bus === 'crunch' ? crunch : bus === 'music' ? mFilter : sBus);
     s.start(t0, Math.random() * 0.5); s.stop(t0 + dur + 0.05);
   }
@@ -1512,30 +1512,45 @@ const sfx = (() => {
     // two droplets meeting: a wet stretch, then a deep blooping gulp
     // Hypervelocity's aiming seconds: a whine climbing the whole time, crackles getting faster
     hyperCharge(dur) {
-      tone({ f0: 70, f1: 1500, dur, type: 'sawtooth', vol: 0.08, lp: 3200, attack: 0.3 });
-      tone({ f0: 38, f1: 95, dur, type: 'sine', vol: 0.35, attack: 0.4 });
-      let t = 0.15, gap = 0.3;
-      while (t < dur) { noise({ dur: 0.04, vol: 0.18, type: 'highpass', f0: 5000, delay: t }); t += gap; gap = Math.max(0.06, gap * 0.85); }
+      // a dark growl climbing in pitch, a sub swell, a thin whine rising over it and the blade grinding on the ball
+      for (const dt of [-12, 12]) tone({ f0: 55, f1: 130, dur, type: 'sawtooth', vol: 0.11, lp: 1100, attack: dur * 0.5, detune: dt });
+      tone({ f0: 36, f1: 72, dur, type: 'sine', vol: 0.5, attack: dur * 0.6 });
+      tone({ f0: 320, f1: 1900, dur, type: 'sine', vol: 0.05, attack: dur * 0.85 });
+      noise({ dur, vol: 0.12, type: 'bandpass', f0: 900, f1: 2400, q: 2.5, attack: 0.2 });
+      // a heartbeat that speeds up as the time runs out
+      let t = 0.05, gap = 0.62;
+      while (t < dur - 0.1) {
+        tone({ f0: 90, f1: 40, dur: 0.34, type: 'sine', vol: 0.9, attack: 0.018, delay: t });
+        tone({ f0: 76, f1: 36, dur: 0.3, type: 'sine', vol: 0.6, attack: 0.018, delay: t + 0.16 });
+        t += gap; gap = Math.max(0.3, gap * 0.8);
+      }
     },
     // the slow-motion swing: a deep stretched whoosh with a fire roar building under it
     hyperBurn(dur) {
-      noise({ dur, vol: 0.35, type: 'bandpass', f0: 160, f1: 900, q: 0.7 });
-      noise({ dur: dur * 0.8, vol: 0.18, type: 'lowpass', f0: 400, f1: 1600, delay: dur * 0.2 });
-      tone({ f0: 45, f1: 70, dur, type: 'sine', vol: 0.3, attack: dur * 0.6 });
-      for (let t = 0.3; t < dur; t += rand(0.05, 0.14)) noise({ dur: 0.03, vol: 0.06 + 0.12 * t / dur, type: 'highpass', f0: 3500, delay: t });
+      // a whoosh and a fire roar that swell all the way into the impact, over a growing sub and an ominous growl
+      noise({ dur: dur + 0.05, vol: 0.6, type: 'lowpass', f0: 250, f1: 3000, attack: dur * 0.9 });
+      noise({ dur: dur + 0.05, vol: 0.4, type: 'bandpass', f0: 160, f1: 800, q: 0.8, attack: dur * 0.7 });
+      tone({ f0: 38, f1: 95, dur: dur + 0.05, type: 'sine', vol: 0.7, attack: dur * 0.9 });
+      for (const dt of [-14, 14]) tone({ f0: 50, f1: 110, dur: dur + 0.05, type: 'sawtooth', vol: 0.13, lp: 900, attack: dur * 0.85, detune: dt });
+      tone({ f0: 500, f1: 2600, dur: dur + 0.05, type: 'triangle', vol: 0.05, attack: dur * 0.9 });
     },
     // blade meeting the ball: a ringing clang over a deep hit
     hyperClang() {
-      [880, 1320, 1975, 2637].forEach((f, i) => tone({ f0: f, f1: f * 0.985, dur: 1.4 - i * 0.2, type: 'sine', vol: 0.12 / (i + 1), attack: 0.001 }));
-      tone({ f0: 70, f1: 38, dur: 0.6, type: 'sine', vol: 0.8, bus: 'crunch' });
-      noise({ dur: 0.12, vol: 0.6, type: 'bandpass', f0: 3600, q: 1.2, bus: 'crunch' });
+      [660, 990, 1480, 1975, 2637].forEach((f, i) => tone({ f0: f, f1: f * 0.98, dur: 2.2 - i * 0.3, type: 'sine', vol: 0.16 / (i + 1), attack: 0.001 }));
+      tone({ f0: 110, f1: 28, dur: 1.3, type: 'sine', vol: 1.0, attack: 0.002, bus: 'crunch' });
+      tone({ f0: 55, f1: 24, dur: 1.8, type: 'sine', vol: 0.7, attack: 0.002 });
+      noise({ dur: 0.16, vol: 0.9, type: 'bandpass', f0: 3000, q: 0.9, bus: 'crunch' });
+      noise({ dur: 1.4, vol: 0.5, type: 'lowpass', f0: 1200, f1: 80 });
+      tone({ f0: 1900, f1: 1300, dur: 0.7, type: 'sawtooth', vol: 0.05, lp: 4200 });   // the scrape of steel
     },
     // Hypervelocity firing: a sonic boom
     hyperBoom() {
-      noise({ dur: 0.08, vol: 1.0, type: 'highpass', f0: 1800 });
-      tone({ f0: 110, f1: 28, dur: 0.9, type: 'sine', vol: 1.0, attack: 0.002, bus: 'crunch' });
-      noise({ dur: 1.2, vol: 0.4, type: 'lowpass', f0: 2400, f1: 120 });
-      noise({ dur: 0.9, vol: 0.2, type: 'bandpass', f0: 3000, f1: 600, q: 0.6, delay: 0.05 });
+      noise({ dur: 0.1, vol: 1.0, type: 'highpass', f0: 1500, bus: 'crunch' });
+      tone({ f0: 130, f1: 24, dur: 1.5, type: 'sine', vol: 1.0, attack: 0.002, bus: 'crunch' });
+      tone({ f0: 62, f1: 20, dur: 2.2, type: 'sine', vol: 0.8, attack: 0.002 });
+      noise({ dur: 1.8, vol: 0.65, type: 'lowpass', f0: 3200, f1: 90 });
+      noise({ dur: 1.3, vol: 0.32, type: 'bandpass', f0: 3200, f1: 380, q: 0.6, delay: 0.04 });   // the air tearing after it
+      noise({ dur: 3.2, vol: 0.55, type: 'lowpass', f0: 360, f1: 50, delay: 0.1, attack: 0.35 });   // thunder rolling round the arena
     },
     // a bullet striking the ball: a hard ping and a crack
     gunHit(v = 1) {
