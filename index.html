@@ -228,8 +228,15 @@ button.wcard:hover{transform:translateY(-2px)}
 .abcard p{margin:0;font-size:13px;line-height:1.42;color:var(--sand-dim);font-weight:600;flex:1}
 .abcard .btn{align-self:flex-start}
 .btn .gem{margin-right:2px;vertical-align:-1px}
-.abcard .ab-req{margin:0;font-size:12px;line-height:1.4;font-weight:700;color:#ffb36b;flex:0 0 auto}
-.abcard .ab-req.met{color:var(--rune)}
+.ab-reqs{display:flex;flex-direction:column;gap:7px;padding:9px 10px;border-radius:8px;background:rgba(0,0,0,.22);border:1px solid rgba(243,230,200,.12)}
+.ab-reqs .rq{display:grid;grid-template-columns:1fr auto;align-items:baseline;gap:4px 8px;font-size:12px;font-weight:700;color:var(--sand)}
+.ab-reqs .rq b{font-variant-numeric:tabular-nums;color:var(--sand-dim)}
+.ab-reqs .rq i{grid-column:1/-1;display:block;height:6px;border-radius:3px;background:rgba(243,230,200,.12);overflow:hidden;position:relative}
+.ab-reqs .rq i::after{content:"";position:absolute;inset:0 auto 0 0;width:calc(var(--p) * 100%);border-radius:3px;background:linear-gradient(90deg,#ff9a3c,var(--c));box-shadow:0 0 8px color-mix(in srgb,var(--c) 60%,transparent)}
+.ab-reqs .rq.done b{color:var(--rune)}
+.ab-reqs .rq.done i::after{background:var(--rune);box-shadow:0 0 8px rgba(71,240,215,.6)}
+.ab-reqs small{font-size:11px;line-height:1.35;color:var(--sand-dim);font-weight:600}
+.ab-reqs.met small{color:var(--rune)}
 .ab-on{font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--c);padding:11px 0 10px}
 .ab-chip{--c:var(--rune);display:inline-flex;align-items:center;gap:8px;font-weight:700;font-size:14px;color:var(--sand)}
 .ab-chip .ab-ico{width:30px;height:30px;border-radius:50%;color:var(--c);background:color-mix(in srgb,var(--c) 16%,var(--void));box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--c) 65%,transparent)}
@@ -1490,7 +1497,7 @@ const ABILITIES = [
   { id: 'blink', name: 'Phantom Step', price: 350, cd: 7, color: '#b98cff', desc: 'Teleport 10 m the way you move and leave an afterimage behind.' },
   { id: 'attract', name: 'Attract', price: 450, cd: 14, color: '#4f86ff', desc: 'Yank the nearest ball onto you. For 2.5 s your parries reach 50% further, so catch it and fire it where you want.' },
   { id: 'power', name: 'Power Slash', price: 500, cd: 10, color: '#ff5a2a', desc: 'A huge slash with double parry reach. The ball flies 40% faster until it reaches someone.' },
-  { id: 'gun', name: 'Gun', price: 3600, cd: 6, color: '#ffd23f', req: { wins: 5, kills: 15 }, desc: 'Pull out a blaster that aims itself: it shoots the ball coming for you, or else the nearest ball. Yours is parried away to the player you aim at; any other gets blasted off course before it carries on after its target.' },
+  { id: 'gun', name: 'Gun', price: 3600, cd: 6, color: '#ffd23f', req: { wins: 15, kills: 50 }, desc: 'Pull out a blaster that aims itself: it shoots the ball coming for you, or else the nearest ball. Yours is parried away to the player you aim at; any other gets blasted off course before it carries on after its target.' },
   { id: 'phantom', name: 'Vanish', price: 550, cd: 15, color: '#a9b8ff', desc: 'Turn invisible for 4 s. A ball coming for you flies straight through you and picks someone else, and nobody can target you. Not allowed once only two players are left.' },
   { id: 'freeze', name: 'Frost Lock', price: 650, cd: 16, color: '#7fe8ff', desc: 'Freeze every ball in ice for 1.5 s. If a frozen ball is after you, walk up to it and hit it out of the ice whenever you like.' },
   { id: 'warp', name: 'Time Warp', price: 750, cd: 16, color: '#b4ff5a', desc: 'A 6 m bubble of slow time around you for 3.5 s. Balls crawl at a third of their speed inside it.' },
@@ -4762,8 +4769,19 @@ function renderAbilities() {
     const req = a.req, met = !req || (profile.wins >= req.wins && profile.kills >= req.kills);
     let reqLine = null;
     if (req && !owned) {
-      reqLine = document.createElement('p'); reqLine.className = 'ab-req' + (met ? ' met' : '');
-      reqLine.textContent = `${met ? 'Unlocked' : 'To unlock'}: ${req.wins} wins (${Math.min(profile.wins, req.wins)}/${req.wins}) · ${req.kills} takedowns (${Math.min(profile.kills, req.kills)}/${req.kills}). A takedown is anyone swallowed by a ball you sent.`;
+      // two progress bars: wins and takedowns
+      reqLine = document.createElement('div'); reqLine.className = 'ab-reqs' + (met ? ' met' : '');
+      const bar = (label, have, need) => {
+        const row = document.createElement('div'); row.className = 'rq' + (have >= need ? ' done' : '');
+        const l = document.createElement('span'); l.textContent = label;
+        const n = document.createElement('b'); n.textContent = `${Math.min(have, need)} / ${need}`;
+        const track = document.createElement('i'); track.style.setProperty('--p', Math.min(1, have / need).toFixed(3));
+        row.append(l, n, track);
+        return row;
+      };
+      const note = document.createElement('small');
+      note.textContent = met ? 'Unlocked. You can buy it now.' : 'A takedown is anyone swallowed by a ball you sent.';
+      reqLine.append(bar('Wins', profile.wins, req.wins), bar('Takedowns', profile.kills, req.kills), note);
     }
     let act;
     if (!owned && !met) {
