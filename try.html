@@ -530,6 +530,7 @@ const FOV = 62;
 const SHOULDER = 1.15;       // shift-lock camera offset to the right
 const SLOTS = 8;
 const PROTO = 7;             // online message format version
+const BUILD = 202610042030;  // this copy of the game; players on an older copy are told to reload
 const START_COINS = 200;
 const EARN = { parry: 4, outlast: 8, round: 10, win: 120 };
 const WSCALE = 1.28;         // weapon size relative to its modelled size
@@ -3210,6 +3211,7 @@ function hyperVisStart(seq, from, dir, shooter) {
   const o = V(from.x, 0.07, from.z), d = V(dir.x, 0, dir.z).normalize();
   game.hyperVis = { seq, phase: 'impact', t: 0, from: o, dir: d, want: d.clone(), len: 30, shooter };
   hyperLine.visible = false;
+  ball.predict = null;   // a guest who struck it stops guessing a normal parry: the ball is held on the blade
   // the strike's impact (flash, frame, sparks) lands when the blade arrives: see hyperContact
   sfx.hyperBurn(HYPER_HIT);
 }
@@ -4549,10 +4551,26 @@ function publishPresence(rdt, force) {
     v: PROTO, on: 1, nm: myName(), wp: profile.equipped, away: document.hidden ? 1 : null,
     p: L && L.alive ? [r2(L.pos.x), r2(L.pos.y), r2(L.pos.z), r2(L.facing)] : null,
     sw: L ? L.swingCount : 0, pr: net.myParry, hit: net.myHit >= 0 ? net.myHit : null,
-    ab: L ? [L.abCount, ABILITY_IDX[L.ability] || 0] : null, fz: net.fzSeq, rq: net.rq,
+    ab: L ? [L.abCount, ABILITY_IDX[L.ability] || 0] : null, fz: net.fzSeq, rq: net.rq, bd: BUILD,
     H: net.isHost ? hostSnapshot() : null,
   };
   net.room.presence(pres).catch(() => {});
+}
+// An open page never updates itself, so someone who joined from a tab left open for hours can be playing an
+// older copy that looks different (missing cutscenes and so on). If anyone in the room is newer, offer a reload.
+let buildEl = null;
+function checkBuilds(peers) {
+  const newest = peers.reduce((m, p) => Math.max(m, num(p.presence && p.presence.bd, 0)), 0);
+  const old = newest > BUILD;
+  if (old && !buildEl) {
+    buildEl = document.createElement('button');
+    buildEl.type = 'button';
+    buildEl.textContent = 'A newer version of Engulf is in this room · tap to reload';
+    buildEl.style.cssText = 'position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 64px);transform:translateX(-50%);z-index:99;font:700 13px/1.2 var(--ui);color:#1a1033;background:#ffd76a;border:0;border-radius:8px;padding:9px 14px;box-shadow:0 4px 18px rgba(0,0,0,.35);cursor:pointer';
+    buildEl.addEventListener('click', () => location.reload());
+    document.body.appendChild(buildEl);
+  }
+  if (buildEl) buildEl.hidden = !old;
 }
 function electHost(peers) {
   const now = Date.now();
@@ -4631,6 +4649,7 @@ function applySnapshot(H) {
   game.diff = clamp(num(H.df, 1) | 0, 0, DIFFS.length - 1);
   if (typeof H.map === 'number' && (H.map | 0) !== mapIdx) loadMap(H.map | 0);
   if (newRound) {
+    net.seenHyper = 0;
     game.rid = H.rid; clearRoundUi(); clearFx();
     net.seenDeflects = num(Array.isArray(H.dp) ? H.dp[0] : 0); net.seenCine = Array.isArray(H.cn) ? num(H.cn[0]) : 0; net.seenWin = num(H.win, -1);
     ball.predict = twin.predict = null; net.myHit = -1; net.reported.clear();
@@ -4713,7 +4732,8 @@ function followNet(b, s, dt, rdt) {
   b.target = b.state === 'homing' ? t : null;
   const age = clamp((performance.now() - s.t) / 1000, 0, 0.2);
   tmp1.copy(s.pos).addScaledVector(s.vel, s.state === 1 ? age : 0);
-  if (b.pos.distanceToSquared(tmp1) > 64) b.pos.copy(tmp1); else b.pos.lerp(tmp1, damp(20, rdt));
+  const held = b === ball && game.hyperVis && (game.hyperVis.phase === 'impact' || game.hyperVis.phase === 'aim');
+  if (held || b.pos.distanceToSquared(tmp1) > 64) b.pos.copy(tmp1); else b.pos.lerp(tmp1, damp(20, rdt));
   b.vel.copy(s.vel);
   if (b.target && b.target !== prev && b.target.kind === 'local') sfx.alarm();
 }
@@ -4806,11 +4826,13 @@ function netTick(rdt) {
   for (const p of peers) byPeer.set(p.peer, p);
   if (game.realTime - net.joinedAt > 1.5) {
     const host = electHost(peers);
+    if ((host ? host.peer : null) !== net.hostPeer) net.seenHyper = 0;
     net.hostPeer = host ? host.peer : null;
     const amHost = !!host && host.peer === net.me;
     if (amHost && !net.isHost) becomeHost();
     else if (!amHost && net.isHost) yieldHost();
   }
+  checkBuilds(peers);
   if (!net.isHost && net.hostPeer) {
     const pres = byPeer.get(net.hostPeer)?.presence;
     if (pres && pres !== net.lastHostPres && pres.H && typeof pres.H === 'object') {
@@ -5903,7 +5925,7 @@ function updateCamera(rdt) {
       const sd = (gp.pos.x - mid.x) * tmp1.z - (gp.pos.z - mid.z) * tmp1.x;
       HVc.side = sd >= 0 ? 1 : -1;
     }
-    const sw = smooth(0, HYPER_HIT, HVc.t), dist = lerp(6.4, 4.6, sw), back = lerp(2.2, 0.8, sw);
+    const sw = smooth(0, HYPER_HIT, HVc.t), dist = lerp(6.4, 4.6, sw) + Math.max(0, ball.radius - 0.65) * 3, back = lerp(2.2, 0.8, sw);
     const camAt = V(mid.x + tmp1.z * HVc.side * dist - tmp1.x * back, mid.y + lerp(0.9, 0.45, sw), mid.z - tmp1.x * HVc.side * dist - tmp1.z * back);
     camera.position.lerp(camAt, w);
     tmp2.lerp(mid, w);
