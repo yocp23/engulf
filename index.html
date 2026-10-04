@@ -1408,9 +1408,14 @@ const sfx = (() => {
         noise({ dur: 0.4, vol: 0.2 * v, type: 'highpass', f0: 6000, f1: 2500 });
         tone({ f0: 300, f1: 80, dur: 0.4, type: 'triangle', vol: 0.2 * v });
       } else if (id === 'gun') {
-        noise({ dur: 0.07, vol: 0.5 * v, type: 'highpass', f0: 2200 });
-        tone({ f0: 190, f1: 42, dur: 0.18, type: 'square', vol: 0.18 * v, lp: 1400, bus: 'crunch' });
-        noise({ dur: 0.3, vol: 0.12 * v, type: 'bandpass', f0: 900, f1: 260, q: 0.8 });
+        // the loudest thing in the game: a sharp crack, a deep boom, a punchy body and an echo rolling off the arena
+        noise({ dur: 0.06, vol: 1.2 * v, type: 'highpass', f0: 2500 });
+        noise({ dur: 0.04, vol: 0.9 * v, type: 'bandpass', f0: 4200, q: 1.2, bus: 'crunch' });
+        tone({ f0: 150, f1: 32, dur: 0.5, type: 'sine', vol: 1.1 * v, attack: 0.001, bus: 'crunch' });
+        tone({ f0: 320, f1: 55, dur: 0.22, type: 'square', vol: 0.35 * v, lp: 1600, attack: 0.001, bus: 'crunch' });
+        noise({ dur: 0.38, vol: 0.6 * v, type: 'bandpass', f0: 1400, f1: 220, q: 0.7 });
+        noise({ dur: 1.1, vol: 0.28 * v, type: 'lowpass', f0: 1100, f1: 140, delay: 0.07 });
+        noise({ dur: 0.7, vol: 0.14 * v, type: 'bandpass', f0: 700, f1: 300, q: 1.1, delay: 0.24 });
       } else if (id === 'attract') {
         tone({ f0: 90, f1: 380, dur: 0.5, type: 'sawtooth', vol: 0.05 * v, lp: 900 });
         tone({ f0: 180, f1: 760, dur: 0.45, type: 'sine', vol: 0.08 * v });
@@ -1438,9 +1443,10 @@ const sfx = (() => {
     // two droplets meeting: a wet stretch, then a deep blooping gulp
     // a bullet striking the ball: a hard ping and a crack
     gunHit(v = 1) {
-      tone({ f0: 2600, f1: 1700, dur: 0.22, type: 'sine', vol: 0.16 * v });
-      tone({ f0: 3900, f1: 3500, dur: 0.12, type: 'sine', vol: 0.08 * v });
-      noise({ dur: 0.05, vol: 0.5 * v, type: 'bandpass', f0: 3200, q: 1.5, bus: 'crunch' });
+      tone({ f0: 2600, f1: 1700, dur: 0.3, type: 'sine', vol: 0.4 * v });
+      tone({ f0: 3900, f1: 3500, dur: 0.18, type: 'sine', vol: 0.2 * v });
+      noise({ dur: 0.07, vol: 1.0 * v, type: 'bandpass', f0: 3200, q: 1.5, bus: 'crunch' });
+      tone({ f0: 180, f1: 60, dur: 0.2, type: 'sine', vol: 0.6 * v, bus: 'crunch' });
     },
     merge() {
       tone({ f0: 180, f1: 520, dur: 0.35, type: 'sine', vol: 0.35 });
@@ -1497,7 +1503,7 @@ const ABILITIES = [
   { id: 'blink', name: 'Phantom Step', price: 350, cd: 7, color: '#b98cff', desc: 'Teleport 10 m the way you move and leave an afterimage behind.' },
   { id: 'attract', name: 'Attract', price: 450, cd: 14, color: '#4f86ff', desc: 'Yank the nearest ball onto you. For 2.5 s your parries reach 50% further, so catch it and fire it where you want.' },
   { id: 'power', name: 'Power Slash', price: 500, cd: 10, color: '#ff5a2a', desc: 'A huge slash with double parry reach. The ball flies 40% faster until it reaches someone.' },
-  { id: 'gun', name: 'Gun', price: 3600, cd: 6, color: '#ffd23f', req: { wins: 15, kills: 50 }, desc: 'Pull out a blaster that aims itself: it shoots the ball coming for you, or else the nearest ball. Yours is parried away to the player you aim at; any other gets blasted off course before it carries on after its target.' },
+  { id: 'gun', name: 'Gun', price: 3600, cd: 12, color: '#ffd23f', req: { wins: 15, kills: 50 }, desc: 'Pull out a blaster that aims itself: it shoots the ball coming for you, or else the nearest ball. Yours is parried away to the player you aim at; any other gets blasted off course before it carries on after its target.' },
   { id: 'phantom', name: 'Vanish', price: 550, cd: 15, color: '#a9b8ff', desc: 'Turn invisible for 4 s. A ball coming for you flies straight through you and picks someone else, and nobody can target you. Not allowed once only two players are left.' },
   { id: 'freeze', name: 'Frost Lock', price: 650, cd: 16, color: '#7fe8ff', desc: 'Freeze every ball in ice for 1.5 s. If a frozen ball is after you, walk up to it and hit it out of the ice whenever you like.' },
   { id: 'warp', name: 'Time Warp', price: 750, cd: 16, color: '#b4ff5a', desc: 'A 6 m bubble of slow time around you for 3.5 s. Balls crawl at a third of their speed inside it.' },
@@ -2874,7 +2880,7 @@ function gunFx(f, end, hitBall) {
     impactFlash(end, c, 1.1 + hitBall.vr * 0.4);
     burst(end, c, 26, 12, 0.35, false, 0.16);
     burst(end, WHITE, 10, 8, 0.25, false, 0.1);
-    const vol = f.kind === 'local' ? 1 : clamp(1.2 - camera.position.distanceTo(end) / 50, 0.2, 0.9);
+    const vol = f.kind === 'local' ? 1 : clamp(1.2 - camera.position.distanceTo(end) / 50, 0.6, 1);
     sfx.gunHit(vol);
   }
 }
@@ -3032,7 +3038,8 @@ function useAbility(f) {
 // what everyone sees when someone uses an ability
 function abilityFx(f, id, from = null) {
   const A = ABILITY_BY_ID[id] || ABILITIES[0], c = new THREE.Color(A.color), local = f.kind === 'local';
-  const vol = local ? 1 : clamp(1.2 - camera.position.distanceTo(f.pos) / 45, 0, 0.8);
+  let vol = local ? 1 : clamp(1.2 - camera.position.distanceTo(f.pos) / 45, 0, 0.8);
+  if (id === 'gun') vol = Math.max(vol, 0.65);   // a gunshot carries across the whole arena
   if (id !== 'power' && id !== 'split' && vol > 0) sfx.ability(id, vol);
   if (id === 'dash') {
     burst(f.chest(tmp2), c, 16, 7, 0.35, false, 0.16);
