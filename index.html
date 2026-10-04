@@ -1866,7 +1866,7 @@ function wristAngle(t, dual) {
 // Hypervelocity's anime strike, in real seconds. 'strike': coil back (anticipation), then a long slow-motion
 // swing with the blade white-hot and burning through the air, meeting the ball at HYPER_CONTACT. 'hold': leaning in, blade grinding and trembling against the ball while
 // aiming. 'release': a violent follow-through far past the ball into a low finishing pose, held, then relaxed.
-const HYPER_CONTACT = 1.85, HP_COILED = 0.6;
+const HYPER_CONTACT = 1.85, HP_COILED = 0.6, HP_ACCEL = 3.5;   // how sharply the swing speeds up (exponential)
 const HP_WIND = [0.8, -2.85, 0.4], HP_CLASH = [1.5, -0.35, -0.05], HP_FINISH = [2.4, 1.75, -0.5];
 const _hp = [0, 0, 0, 0, 0, 0, 0, 0, 0];
 function hyperPoseAt(a, out) {
@@ -1875,7 +1875,7 @@ function hyperPoseAt(a, out) {
   if (a.stage === 'strike') {
     if (t < 0.3) { const e = easeOut(t / 0.3); P(POSE_IDLE, HP_WIND, e); twist = -0.75 * e; lean = -0.08; wrist = lerp(WRIST_IDLE, 0, e); grip = 0; }
     else if (t < HP_COILED) { P(HP_WIND, HP_WIND, 0); out[1] -= (t - 0.3) * 0.25; twist = -0.75 - (t - 0.3) * 0.2; lean = -0.1; trem = 0.25; grip = 0; }   // the held coil
-    else if (t < HYPER_CONTACT) { const u = (t - HP_COILED) / (HYPER_CONTACT - HP_COILED), e = u * u * (1.6 - 0.6 * u); P(HP_WIND, HP_CLASH, e); twist = lerp(-0.75, 0.2, e); lunge = 0.34 * e; lean = lerp(-0.08, 0.28, e); str = 1; grip = e; }   // slow-mo: heavy, gathering speed
+    else if (t < HYPER_CONTACT) { const u = (t - HP_COILED) / (HYPER_CONTACT - HP_COILED), e = (Math.exp(HP_ACCEL * u) - 1) / (Math.exp(HP_ACCEL) - 1); P(HP_WIND, HP_CLASH, e); twist = lerp(-0.75, 0.2, e); lunge = 0.34 * e; lean = lerp(-0.08, 0.28, e); str = 1; grip = e; }   // slow-mo: creeps off the coil, then keeps gathering speed into the ball
     else { P(HP_CLASH, HP_CLASH, 0); twist = 0.2; lunge = 0.34; lean = 0.28; trem = 0.4; str = 0.3; }
   } else if (a.stage === 'hold') {
     P(HP_CLASH, HP_CLASH, 0); twist = 0.2; lunge = 0.34; lean = 0.3; trem = 0.45 + clamp(t / HYPER_AIM, 0, 1) * 0.9; str = 0.3;
@@ -2362,7 +2362,7 @@ class Fighter {
       const hb = this.hb[h], ht = this.ht[h];
       if (!this.pb) { this.pb = [V(), V()]; this.pt = [V(), V()]; this.pbT = -9; }
       if (game.realTime - this.pbT > 0.2) { this.pb[h].copy(hb); this.pt[h].copy(ht); }   // a fresh start: nothing to fill in from
-      const n = Math.max(1, Math.round(600 * dt * b));
+      const n = Math.min(60, Math.max(1, Math.round((600 * dt + 30 * this.pt[h].distanceTo(ht)) * b)));   // the faster it cuts, the more it sheds
       for (let i = 0; i < n; i++) {
         const sm = Math.random(), u = 0.12 + 0.88 * Math.pow(Math.random(), 0.7);
         tmp3.lerpVectors(this.pb[h], hb, sm); tmp4.lerpVectors(this.pt[h], ht, sm); tmp3.lerp(tmp4, u);
@@ -2399,8 +2399,8 @@ class Fighter {
     const dash = this.dashT > 0 ? 0.5 : 0;
     if (this.hyperAnim) {
       // Hypervelocity takes over the arms; sub-sample its fast moments so the arc stays smooth
-      const a = this.hyperAnim, fast = a.stage === 'release' || (a.stage === 'strike' && a.t < 0.3), step = a.dtReal || 0.016;
-      const subs = fast ? 5 : 1, t0 = a.t;
+      const a = this.hyperAnim, fast = a.stage === 'release' || (a.stage === 'strike' && (a.t < 0.3 || (a.t > HYPER_CONTACT - 0.45 && a.t < HYPER_CONTACT + 0.1))), step = a.dtReal || 0.016;
+      const subs = fast ? 4 : 1, t0 = a.t;
       for (let i = subs - 1; i >= 0; i--) {
         a.t = Math.max(0, t0 - step * i / subs);
         const str = this.applyHyperPose(a);
@@ -3252,6 +3252,7 @@ function hyperTick(rdt) {
       const before = a.t;
       a.t += rdt; a.dtReal = rdt;
       if (a.stage === 'strike' && before < HYPER_CONTACT && a.t >= HYPER_CONTACT) hyperContact(H);
+      else if (a.stage === 'strike' && a.t > HP_COILED && a.t < HYPER_CONTACT) { const u = (a.t - HP_COILED) / (HYPER_CONTACT - HP_COILED); game.shake = Math.max(game.shake, 0.22 * Math.exp(HP_ACCEL * (u - 1))); }
       if (a.stage === 'release' && a.t > 1.0) { sh.hyperAnim = null; }
     }
     if (H.phase === 'aim' && a && a.stage === 'strike') { a.stage = 'hold'; a.t = 0; }
