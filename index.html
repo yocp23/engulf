@@ -1317,11 +1317,29 @@ const sfx = (() => {
   const musicLevel = () => 0.8 * vol.music * vol.music * (mCine ? 0.45 : 1);
   const sfxLevel = () => 1.56 * vol.sfx * vol.sfx;
   let mLevel = 0, mInt = 0, mCine = false, mParamT = 0;
+  // a silent blip played inside a tap: iOS only lets audio start (or restart) from a user gesture
+  function kick() {
+    try { const s = ctx.createBufferSource(); s.buffer = ctx.createBuffer(1, 1, ctx.sampleRate); s.connect(ctx.destination); s.start(0); } catch { /* ignore */ }
+  }
+  // Called on every tap and key. Leaving the browser suspends or 'interrupts' the audio (iPhone/iPad), so
+  // wake it up again; if it refuses to come back, throw it away and build a fresh one on the next tap.
   function init() {
-    if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
+    if (ctx && ctx.state === 'closed') { clearInterval(mTimer); ctx = null; }
+    if (ctx) {
+      if (ctx.state !== 'running') {
+        const c = ctx;
+        c.resume().catch(() => {});
+        kick();
+        setTimeout(() => {
+          if (ctx === c && c.state !== 'running' && document.visibilityState === 'visible') { clearInterval(mTimer); ctx = null; c.close().catch(() => {}); }
+        }, 700);
+      }
+      return;
+    }
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     ctx = new AC();
+    kick();
     master = ctx.createGain(); master.gain.value = masterLevel();
     sBus = ctx.createGain(); sBus.gain.value = sfxLevel(); sBus.connect(master);
     const comp = ctx.createDynamicsCompressor();
@@ -1396,6 +1414,8 @@ const sfx = (() => {
   }
   return {
     init,
+    // the page went into the background: pause the audio cleanly so it can be resumed on return
+    sleep() { if (ctx && ctx.state === 'running') ctx.suspend().catch(() => {}); },
     get muted() { return muted; },
     get vol() { return Object.assign({}, vol); },
     VOL_DEFAULT,
@@ -4836,7 +4856,10 @@ addEventListener('pagehide', () => { if (net.room && net.room.kind === 'p2p') ne
 document.addEventListener('visibilitychange', () => {
   // a hidden tab stops animating, so hand hosting to someone else right away
   if (net.mode === 'online' && net.room) publishPresence(0, true);
+  // pause the sound while away and wake it on return (a tap may still be needed on iPhone/iPad)
+  if (document.hidden) sfx.sleep(); else sfx.init();
 });
+addEventListener('pageshow', () => sfx.init());
 
 /* ================= input (shift-lock camera) ================= */
 const keys = new Set();
@@ -4906,7 +4929,8 @@ canvas.addEventListener('mousedown', e => {
 addEventListener('mouseup', e => { if (e.button === 2) rmb = false; });
 addEventListener('mousemove', e => { if (locked) look(e.movementX || 0, e.movementY || 0, 1); else if (rmb) look(e.movementX || 0, e.movementY || 0, 1.6); });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
-addEventListener('pointerdown', () => sfx.init());
+// any tap, click or key wakes the sound (iOS counts touchend and click as gestures, not always pointerdown)
+for (const ev of ['pointerdown', 'touchend', 'click', 'keydown']) addEventListener(ev, () => sfx.init(), { capture: true, passive: true });
 
 // Phones: stop the page from zooming. iOS ignores user-scalable=no, so also block its pinch gestures and
 // a second tap that lands soon after the first (double-tap zoom); text fields are left alone.
