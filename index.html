@@ -1628,7 +1628,7 @@ const AB_ICONS = {
 };
 const abilityIcon = (id, size = 22) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${AB_ICONS[id] || AB_ICONS.dash}</svg>`;
 // the dramatic hit (real seconds, near-frozen time), then the seconds the hitter gets to aim at full speed
-const HYPER_IMPACT = 2.75, HYPER_AIM = 3.0, HYPER_SLOW = 0.04, HYPER_PIERCE = 2;
+const HYPER_IMPACT = 2.05, HYPER_AIM = 3.0, HYPER_SLOW = 0.04, HYPER_PIERCE = 2;
 const TELE_HOLD = 1.6;   // how long Telekinesis can hold a ball before it throws itself
 const PHANTOM_T = 4, WARP_T = 3.5, WARP_R = 6, WARP_SLOW = 0.33, CATCH_T = 2.5, CATCH_REACH = 1.5;
 const POWER_BOOST = 1.4, SPLIT_SIZE = 0.72, SPLIT_SPEED = 0.75, FREEZE_T = 1.5, SHIELD_T = 1.5;
@@ -1867,6 +1867,9 @@ function wristAngle(t, dual) {
 // swing with the blade white-hot and burning through the air, meeting the ball at HYPER_CONTACT. 'hold': leaning in, blade grinding and trembling against the ball while
 // aiming. 'release': a violent follow-through far past the ball into a low finishing pose, held, then relaxed.
 const HYPER_CONTACT = 1.85, HP_COILED = 0.6, HP_ACCEL = 3.5;   // how sharply the swing speeds up (exponential)
+// the cut to the close-up lands with the blade already moving: the strike starts just past the coil,
+// so the blade meets the ball HYPER_HIT seconds into the cutscene
+const HP_START = 0.7, HYPER_HIT = HYPER_CONTACT - HP_START;
 const HP_WIND = [0.8, -2.85, 0.4], HP_CLASH = [1.5, -0.35, -0.05], HP_FINISH = [2.4, 1.75, -0.5];
 const _hp = [0, 0, 0, 0, 0, 0, 0, 0, 0];
 function hyperPoseAt(a, out) {
@@ -3020,7 +3023,7 @@ function startHyper(p, b, next, look = null) {
   p.group.rotation.y = p.facing;
   p.hyperAnim = { stage: 'hold', t: 0 }; p.applyHyperPose(p.hyperAnim);
   hyperHoldPoint(p, dir, b);
-  p.hyperAnim = { stage: 'strike', t: 0 };
+  p.hyperAnim = { stage: 'strike', t: HP_START };
   b.vel.set(0, 0, 0);
   b.hyper = { phase: 'impact', t: 0, dir, left: HYPER_PIERCE, shooter: p, seq: game.hyperSeq, aim: next };
   hyperVisStart(game.hyperSeq, b.pos, dir, p);
@@ -3173,7 +3176,7 @@ function hyperVisStart(seq, from, dir, shooter) {
   game.hyperVis = { seq, phase: 'impact', t: 0, from: o, dir: d, want: d.clone(), len: 30, shooter };
   hyperLine.visible = false;
   // the strike's impact (flash, frame, sparks) lands when the blade arrives: see hyperContact
-  sfx.hyperBurn(HYPER_CONTACT);
+  sfx.hyperBurn(HYPER_HIT);
 }
 // impact over: back to full speed with the line showing; the hitter has a few seconds to aim it
 function hyperVisAim() {
@@ -3253,7 +3256,7 @@ function hyperTick(rdt) {
   const T = game.realTime;
   const sh = H.shooter;
   if (sh) {
-    if (!sh.hyperAnim && (H.phase === 'impact' || H.phase === 'aim')) sh.hyperAnim = { stage: H.phase === 'aim' ? 'hold' : 'strike', t: H.phase === 'aim' ? 0 : H.t };
+    if (!sh.hyperAnim && (H.phase === 'impact' || H.phase === 'aim')) sh.hyperAnim = { stage: H.phase === 'aim' ? 'hold' : 'strike', t: H.phase === 'aim' ? 0 : H.t + HP_START };
     const a = sh.hyperAnim;
     if (a) {
       const before = a.t;
@@ -5830,7 +5833,7 @@ function updateCamera(rdt) {
   // Hypervelocity: hold on the blade meeting the ball
   const HVc = game.hyperVis;
   if (HVc && HVc.phase === 'impact' && HVc.shooter) {
-    const w = smooth(0, 0.1, HVc.t) * (1 - smooth(HYPER_IMPACT - 0.18, HYPER_IMPACT, HVc.t));
+    const w = 1 - smooth(HYPER_IMPACT - 0.18, HYPER_IMPACT, HVc.t);   // a hard cut in, onto a blade already swinging
     const sh = HVc.shooter, hand = sh.pivots[0].getWorldPosition(tmp3);
     tmp1.subVectors(ball.pos, sh.pos); tmp1.y = 0;
     if (tmp1.lengthSq() < 1e-4) tmp1.set(Math.sin(sh.facing), 0, Math.cos(sh.facing));
@@ -5841,11 +5844,11 @@ function updateCamera(rdt) {
       const sd = (gp.pos.x - mid.x) * tmp1.z - (gp.pos.z - mid.z) * tmp1.x;
       HVc.side = sd >= 0 ? 1 : -1;
     }
-    const sw = smooth(0, HYPER_CONTACT, HVc.t), dist = lerp(6.4, 4.6, sw), back = lerp(2.2, 0.8, sw);
+    const sw = smooth(0, HYPER_HIT, HVc.t), dist = lerp(6.4, 4.6, sw), back = lerp(2.2, 0.8, sw);
     const camAt = V(mid.x + tmp1.z * HVc.side * dist - tmp1.x * back, mid.y + lerp(0.9, 0.45, sw), mid.z - tmp1.x * HVc.side * dist - tmp1.z * back);
     camera.position.lerp(camAt, w);
     tmp2.lerp(mid, w);
-    const punch = smooth(HYPER_CONTACT - 0.02, HYPER_CONTACT + 0.04, HVc.t) * (1 - smooth(HYPER_CONTACT + 0.04, HYPER_CONTACT + 0.5, HVc.t));
+    const punch = smooth(HYPER_HIT - 0.02, HYPER_HIT + 0.04, HVc.t) * (1 - smooth(HYPER_HIT + 0.04, HYPER_HIT + 0.5, HVc.t));
     fov = lerp(fov, 44 - punch * 8, w);
     HVc.roll = lerp(0.05, 0.16, sw) * w * (HVc.side || 1);
   } else if (HVc) HVc.roll = 0;
