@@ -2026,6 +2026,7 @@ class Fighter {
     this.model.scale.set(1, 1, 1); this.model.rotation.set(0, 0, 0); this.model.position.set(0, 0, 0);
     this.parryWindow = 0; this.parryCD = 0; this.dashCD = 0; this.dashT = 0; this.swingT = 9; this.lastSwingT = 9;
     this.abCD = 0; this.shieldT = 0; this.parryMode = 0; this.reachMul = 1; this.ghostT = 0; this.catchT = 0; this.teleHold = 0;
+    this.gunT = 0; this.aimGun(0);
     this.applyGhost();
     this.walk = 0; this.land = 0; this.think = 0; this.pace = 0.6; this.strafe = Math.random() < 0.5 ? 1 : -1;
     this.plan = 'none'; this.planSerial = -1; this.react = 0;
@@ -2059,9 +2060,16 @@ class Fighter {
   }
   aimGun(dt) {
     if (!(this.gunT > 0)) {
-      if (this.blaster && this.blaster.visible) { this.blaster.visible = false; if (this.hands[1]) this.hands[1].group.visible = !(this.ghostT > 0 && this.kind !== 'local'); }
+      // put the blaster away and give a second weapon back its hand (the blaster fades out before this,
+      // so this keys off our own flag, not off whether the blaster is still showing)
+      if (this.gunOn) {
+        this.gunOn = false;
+        if (this.blaster) this.blaster.visible = false;
+        if (this.hands[1]) { this.hands[1].group.visible = !(this.ghostT > 0 && this.kind !== 'local'); this.trails[1].clear(); }
+      }
       return;
     }
+    this.gunOn = true;
     this.gunT -= dt;
     const age = 0.75 - this.gunT, p1 = this.pivots[1], d = this.gunDir;
     const relYaw = Math.atan2(d.x, d.z) - this.facing - this.model.rotation.y, pitch = Math.asin(clamp(d.y, -1, 1));
@@ -2168,6 +2176,7 @@ class Fighter {
   sampleTrails(t, extra) {
     this.group.updateMatrixWorld(true);
     for (let h = 0; h < this.hands.length; h++) {
+      if (h === 1 && this.gunT > 0) continue;   // the second weapon is tucked away while the blaster is out
       const hand = this.hands[h], piv = this.pivots[h];
       hand.group.localToWorld(this.hb[h].copy(hand.baseRaw));
       hand.group.localToWorld(this.ht[h].copy(hand.tipRaw));
