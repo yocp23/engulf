@@ -1504,10 +1504,8 @@ const sfx = (() => {
         noise({ dur: 1.1, vol: 0.28 * v, type: 'lowpass', f0: 1100, f1: 140, delay: 0.07 });
         noise({ dur: 0.7, vol: 0.14 * v, type: 'bandpass', f0: 700, f1: 300, q: 1.1, delay: 0.24 });
       } else if (id === 'hyper') {
-        // the wind-up: a rising whine and electric crackle
-        tone({ f0: 80, f1: 1400, dur: 1.0, type: 'sawtooth', vol: 0.06 * v, lp: 3000, attack: 0.2 });
-        tone({ f0: 40, f1: 90, dur: 1.0, type: 'sine', vol: 0.3 * v, attack: 0.3 });
-        for (let i = 0; i < 8; i++) noise({ dur: 0.04, vol: 0.12 * v, type: 'highpass', f0: 5000, delay: 0.1 + i * 0.11 });
+        // the start of the move: one low swell (the swing's own riser takes over right after)
+        tone({ f0: 50, f1: 110, dur: 0.6, type: 'sine', vol: 0.4 * v, attack: 0.25 });
       } else if (id === 'attract') {
         tone({ f0: 90, f1: 380, dur: 0.5, type: 'sawtooth', vol: 0.05 * v, lp: 900 });
         tone({ f0: 180, f1: 760, dur: 0.45, type: 'sine', vol: 0.08 * v });
@@ -1533,7 +1531,6 @@ const sfx = (() => {
     thaw() { noise({ dur: 0.35, vol: 0.45, type: 'highpass', f0: 3000, f1: 7000 }); tone({ f0: 1400, f1: 300, dur: 0.25, type: 'sine', vol: 0.14 }); noise({ dur: 0.08, vol: 0.4, type: 'bandpass', f0: 5000, q: 2, delay: 0.05 }); },
     block() { tone({ f0: 784, dur: 0.5, type: 'triangle', vol: 0.3 }); tone({ f0: 1175, dur: 0.6, type: 'triangle', vol: 0.2, delay: 0.03 }); noise({ dur: 0.35, vol: 0.45, type: 'highpass', f0: 3000 }); tone({ f0: 130, f1: 60, dur: 0.3, type: 'sine', vol: 0.6, bus: 'crunch' }); },
     // two droplets meeting: a wet stretch, then a deep blooping gulp
-    // Hypervelocity's aiming seconds: a whine climbing the whole time, crackles getting faster
     // Hypervelocity is built from a few clean sounds, one at a time: a riser into the hit, a quiet pulse while you aim,
     // and one big boom when it fires. The hit comes in a few flavours (hyperStyle) that the preview picks between.
     // the slow-motion swing: one rising whoosh and a rising low note, both ending exactly on the hit
