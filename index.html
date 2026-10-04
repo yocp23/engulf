@@ -2778,7 +2778,8 @@ function deflect(p, aimSlot = -1, dirArr = null, mode = 0, b = ball) {
   if (mode === 1) b.boost = POWER_BOOST;
   b.vel.copy(dir).multiplyScalar(b.speed * b.boost);
   if (mode === 2 && b === ball && twin.state === 'off') splitBall(p, next, dir);
-  if (mode === 3) { p.abCD = 9999; if (b === ball && twin.state === 'off') startHyper(p, b, next); }
+  // Hypervelocity flies where the parrier is looking (their shot direction), not toward whoever they aimed at
+  if (mode === 3) { p.abCD = 9999; if (b === ball && twin.state === 'off') startHyper(p, b, next, p.kind === 'bot' ? null : dir); }
   parryFx(p, b, mode);
 }
 function splitBall(p, next, dir) {
@@ -2812,9 +2813,11 @@ function mergeBalls(hitter) {
 // Run by whoever runs the ball. Charge: the ball hangs where it was parried while time slows for everyone and
 // the path lights up. Fly: dead straight at top speed; it swallows up to HYPER_PIERCE players it touches (each
 // gets the usual cutscene, then the shot carries on), and returns to normal homing at the arena wall.
-function startHyper(p, b, next) {
+function startHyper(p, b, next, look = null) {
   game.hyperSeq = (game.hyperSeq || 0) + 1;
-  const dir = V().subVectors(next.chest(V()), b.pos); dir.y = 0;
+  // straight ahead along the way the player looks; a bot just fires at the one it picked
+  const dir = look ? V(look.x, 0, look.z) : V().subVectors(next.chest(V()), b.pos);
+  dir.y = 0;
   if (dir.lengthSq() < 1e-4) dir.set(Math.sin(p.facing), 0, Math.cos(p.facing));
   dir.normalize();
   b.pos.y = Math.max(b.radius + 0.4, 1.3);
