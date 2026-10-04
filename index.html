@@ -1640,7 +1640,7 @@ const ABILITIES = [
   { id: 'warp', name: 'Time Warp', price: 750, cd: 16, color: '#b4ff5a', desc: 'A 6 m bubble of slow time around you for 3.5 s. Balls crawl at a third of their speed inside it.' },
   { id: 'shield', name: 'Aegis', price: 800, cd: 18, color: '#ffd76a', desc: 'A golden dome that parries for you once in the next 1.5 seconds.' },
   { id: 'tele', name: 'Telekinesis', price: 900, cd: 16, color: '#ff7eb6', desc: 'Press to grab a ball from any distance (the one chasing you, or the nearest) and hold it in front of you. Look at a player, then press again or click to throw it at them 25% faster. It throws itself after 1.6 s.' },
-  { id: 'hyper', name: 'Hypervelocity', price: 1500, cd: 9999, once: true, color: '#ff4d6d', req: { wins: 5, kills: 15 }, desc: 'A parry with 50% extra reach. Time freezes as your burning blade hits the ball, then you get a short slow-motion moment to aim a glowing line that everyone can see (click to fire early). It fires dead straight at top speed and swallows up to 2 players in the way. It can be parried back, but it never curves. Once per round.' },
+  { id: 'hyper', name: 'Hypervelocity', price: 1500, cd: 9999, once: true, color: '#ff4d6d', req: { wins: 5, kills: 15 }, desc: 'A parry with 50% extra reach. Time freezes as your burning blade hits the ball, then you get a short slow-motion moment to aim a glowing line that everyone can see (click to fire early). It fires dead straight at top speed and swallows everyone in its path until it reaches the edge of the arena. It can be parried back, but it never curves. Once per round.' },
   { id: 'split', name: 'Splitting Slash', price: 1000, cd: 18, color: '#ff3fd8', desc: 'A wide parry that splits the ball into two smaller, slower balls. They merge back once one of them gets someone.' },
 ];
 const ABILITY_BY_ID = Object.fromEntries(ABILITIES.map(a => [a.id, a]));
@@ -1663,7 +1663,7 @@ const AB_ICONS = {
 };
 const abilityIcon = (id, size = 22) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${AB_ICONS[id] || AB_ICONS.dash}</svg>`;
 // the dramatic hit (real seconds, near-frozen time), then the seconds the hitter gets to aim at full speed
-const HYPER_IMPACT = 2.05, HYPER_AIM = 1.8, HYPER_SLOW = 0.04, HYPER_AIM_SLOW = 0.35, HYPER_PIERCE = 2;   // aiming plays out in slow motion so the line is hard to escape
+const HYPER_IMPACT = 2.05, HYPER_AIM = 1.8, HYPER_SLOW = 0.04, HYPER_AIM_SLOW = 0.35, HYPER_PIERCE = Infinity;   // no limit: it swallows everyone in its path   // aiming plays out in slow motion so the line is hard to escape
 const TELE_HOLD = 1.6;   // how long Telekinesis can hold a ball before it throws itself
 const PHANTOM_T = 4, WARP_T = 3.5, WARP_R = 6, WARP_SLOW = 0.33, CATCH_T = 2.5, CATCH_REACH = 1.5;
 const POWER_BOOST = 1.4, SPLIT_SIZE = 0.72, SPLIT_SPEED = 0.75, FREEZE_T = 1.5, SHIELD_T = 1.5;
@@ -3044,8 +3044,8 @@ function mergeBalls(hitter) {
 /* ---------- Hypervelocity ---------- */
 // Run by whoever runs the ball. Impact: time nearly stops while the camera holds on the blade striking the ball.
 // Aim: the ball hangs where it was hit while the hitter swings a glowing line around for HYPER_AIM seconds (in slow motion) and
-// everyone else scrambles off it. Fly: dead straight at top speed; it swallows up to HYPER_PIERCE players it
-// touches (each gets the usual cutscene, then the shot carries on) and coasts to a stop after the last.
+// everyone else scrambles off it. Fly: dead straight at top speed; it swallows every player it
+// touches (each gets the usual cutscene, then the shot carries on) until it reaches the edge of the arena.
 function startHyper(p, b, next, look = null) {
   game.hyperSeq = (game.hyperSeq || 0) + 1;
   // straight ahead along the way the player looks; a bot just fires at the one it picked
