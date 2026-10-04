@@ -112,6 +112,8 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--rune);outline-o
 #callout{left:16px;right:16px;top:28%;text-align:center;opacity:0;transition:opacity .25s}
 #callout.on{opacity:1;transition:none}
 #callout .big{font:400 clamp(48px,11vw,124px)/1 var(--display);color:var(--sand);text-shadow:0 5px 0 rgba(12,10,34,.55),0 0 34px rgba(255,191,63,.45);overflow-wrap:anywhere}
+#callout.hyper{top:14%}
+#callout.hyper .big{font-size:clamp(30px,6.4vw,74px);letter-spacing:.04em;color:#ffd0da;text-shadow:0 4px 0 rgba(12,10,34,.55),0 0 30px rgba(255,77,109,.85)}
 #callout .small{margin-top:12px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;font-size:14px;color:var(--sand)}
 
 /* cinematic */
@@ -527,7 +529,7 @@ const GRAVITY = 26;
 const FOV = 62;
 const SHOULDER = 1.15;       // shift-lock camera offset to the right
 const SLOTS = 8;
-const PROTO = 6;             // online message format version
+const PROTO = 7;             // online message format version
 const START_COINS = 200;
 const EARN = { parry: 4, outlast: 8, round: 10, win: 120 };
 const WSCALE = 1.28;         // weapon size relative to its modelled size
@@ -1416,6 +1418,11 @@ const sfx = (() => {
         noise({ dur: 0.38, vol: 0.6 * v, type: 'bandpass', f0: 1400, f1: 220, q: 0.7 });
         noise({ dur: 1.1, vol: 0.28 * v, type: 'lowpass', f0: 1100, f1: 140, delay: 0.07 });
         noise({ dur: 0.7, vol: 0.14 * v, type: 'bandpass', f0: 700, f1: 300, q: 1.1, delay: 0.24 });
+      } else if (id === 'hyper') {
+        // the wind-up: a rising whine and electric crackle
+        tone({ f0: 80, f1: 1400, dur: 1.0, type: 'sawtooth', vol: 0.06 * v, lp: 3000, attack: 0.2 });
+        tone({ f0: 40, f1: 90, dur: 1.0, type: 'sine', vol: 0.3 * v, attack: 0.3 });
+        for (let i = 0; i < 8; i++) noise({ dur: 0.04, vol: 0.12 * v, type: 'highpass', f0: 5000, delay: 0.1 + i * 0.11 });
       } else if (id === 'attract') {
         tone({ f0: 90, f1: 380, dur: 0.5, type: 'sawtooth', vol: 0.05 * v, lp: 900 });
         tone({ f0: 180, f1: 760, dur: 0.45, type: 'sine', vol: 0.08 * v });
@@ -1441,6 +1448,13 @@ const sfx = (() => {
     thaw() { noise({ dur: 0.35, vol: 0.45, type: 'highpass', f0: 3000, f1: 7000 }); tone({ f0: 1400, f1: 300, dur: 0.25, type: 'sine', vol: 0.14 }); noise({ dur: 0.08, vol: 0.4, type: 'bandpass', f0: 5000, q: 2, delay: 0.05 }); },
     block() { tone({ f0: 784, dur: 0.5, type: 'triangle', vol: 0.3 }); tone({ f0: 1175, dur: 0.6, type: 'triangle', vol: 0.2, delay: 0.03 }); noise({ dur: 0.35, vol: 0.45, type: 'highpass', f0: 3000 }); tone({ f0: 130, f1: 60, dur: 0.3, type: 'sine', vol: 0.6, bus: 'crunch' }); },
     // two droplets meeting: a wet stretch, then a deep blooping gulp
+    // Hypervelocity firing: a sonic boom
+    hyperBoom() {
+      noise({ dur: 0.08, vol: 1.0, type: 'highpass', f0: 1800 });
+      tone({ f0: 110, f1: 28, dur: 0.9, type: 'sine', vol: 1.0, attack: 0.002, bus: 'crunch' });
+      noise({ dur: 1.2, vol: 0.4, type: 'lowpass', f0: 2400, f1: 120 });
+      noise({ dur: 0.9, vol: 0.2, type: 'bandpass', f0: 3000, f1: 600, q: 0.6, delay: 0.05 });
+    },
     // a bullet striking the ball: a hard ping and a crack
     gunHit(v = 1) {
       tone({ f0: 2600, f1: 1700, dur: 0.3, type: 'sine', vol: 0.4 * v });
@@ -1509,6 +1523,7 @@ const ABILITIES = [
   { id: 'warp', name: 'Time Warp', price: 750, cd: 16, color: '#b4ff5a', desc: 'A 6 m bubble of slow time around you for 3.5 s. Balls crawl at a third of their speed inside it.' },
   { id: 'shield', name: 'Aegis', price: 800, cd: 18, color: '#ffd76a', desc: 'A golden dome that parries for you once in the next 1.5 seconds.' },
   { id: 'tele', name: 'Telekinesis', price: 900, cd: 16, color: '#ff7eb6', desc: 'Press to grab a ball from any distance (the one chasing you, or the nearest) and hold it in front of you. Look at a player, then press again or click to throw it at them 25% faster. It throws itself after 1.6 s.' },
+  { id: 'hyper', name: 'Hypervelocity', price: 6000, cd: 9999, once: true, color: '#ff4d6d', req: { wins: 25, kills: 100 }, desc: 'A parry with 50% extra reach. Everyone sees it wind up and the path it will take, then the ball fires in a dead-straight line at top speed, swallowing up to 2 players in the way. It can be parried back, but it never curves toward you. Once per round.' },
   { id: 'split', name: 'Splitting Slash', price: 1000, cd: 18, color: '#ff3fd8', desc: 'A wide parry that splits the ball into two smaller, slower balls. They merge back once one of them gets someone.' },
 ];
 const ABILITY_BY_ID = Object.fromEntries(ABILITIES.map(a => [a.id, a]));
@@ -1522,6 +1537,7 @@ const AB_ICONS = {
   freeze: '<path d="M12 2v20M3.3 7l17.4 10M3.3 17L20.7 7"/><path d="M9.5 3.5L12 6l2.5-2.5M9.5 20.5L12 18l2.5 2.5"/>',
   shield: '<path d="M12 3l7.5 3v6c0 4.6-3.2 7.8-7.5 9-4.3-1.2-7.5-4.4-7.5-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
   split: '<path d="M12 21v-8M12 13L5.5 5.5M12 13l6.5-7.5"/><circle cx="5" cy="5" r="2.2"/><circle cx="19" cy="5" r="2.2"/>',
+  hyper: '<path d="M2 12h13"/><path d="M11 7l6 5-6 5"/><path d="M19 6v12M22 8v8"/>',
   gun: '<path d="M3 8h15l2 2v2H10l-1.2 5H5.4l1.2-5H3z"/><path d="M18 8V6h2.5M13 12v2"/>',
   attract: '<path d="M6 3v8a6 6 0 0 0 12 0V3"/><path d="M6 7h4M14 7h4"/><path d="M12 21v-2"/>',
   phantom: '<path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z"/><circle cx="12" cy="12" r="2.5"/><path d="M4 20L20 4"/>',
@@ -1529,6 +1545,7 @@ const AB_ICONS = {
   tele: '<path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11.5V4a1.5 1.5 0 0 1 3 0v8M14 11.5V6a1.5 1.5 0 0 1 3 0v8c0 4-2.5 7-6 7s-5-2-6.5-5L3 12.5a1.5 1.5 0 0 1 2.5-1.6L8 14"/><path d="M20 3l1 1M21 7h1"/>',
 };
 const abilityIcon = (id, size = 22) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${AB_ICONS[id] || AB_ICONS.dash}</svg>`;
+const HYPER_CHARGE = 1.0, HYPER_SLOW = 0.22, HYPER_PIERCE = 2;   // wind-up (real seconds), how slow time gets, how many it can swallow
 const TELE_HOLD = 1.6;   // how long Telekinesis can hold a ball before it throws itself
 const PHANTOM_T = 4, WARP_T = 3.5, WARP_R = 6, WARP_SLOW = 0.33, CATCH_T = 2.5, CATCH_REACH = 1.5;
 const POWER_BOOST = 1.4, SPLIT_SIZE = 0.72, SPLIT_SPEED = 0.75, FREEZE_T = 1.5, SHIELD_T = 1.5;
@@ -2608,7 +2625,7 @@ function placeAll() {
   act.forEach((f, i) => { const a = Math.PI / 2 + i / act.length * TAU, r = arenaR * 0.5; f.reset(Math.cos(a) * r, Math.sin(a) * r); });
 }
 function resetBall() {
-  warps.length = 0; ball.sentBy = twin.sentBy = null; ball.heldBy = twin.heldBy = null;
+  warps.length = 0; ball.hyper = null; game.hyperResume = null; if (game.hyperVis) { game.hyperVis = null; hyperLine.visible = false; } ball.sentBy = twin.sentBy = null; ball.heldBy = twin.heldBy = null;
   Object.assign(ball, { radius: BALL_R0, vr: BALL_R0, speed: D().speed0, kills: 0, state: 'idle', idleT: 99, target: null, homingT: 0, grace: 0, trailAcc: 0, boost: 1, frozenT: 0, predict: null });
   Object.assign(twin, { state: 'off', target: null, boost: 1, frozenT: 0, predict: null });
   ball.pos.set(0, BALL_R0 + 2, 0); ball.last.copy(ball.pos); ball.vel.set(0, 0, 0); ball.squash.set(1, 1, 1);
@@ -2738,6 +2755,7 @@ function stepBall(h, b = ball) {
 // mode 0 = a normal parry, 1 = Power Slash, 2 = Splitting Slash
 function deflect(p, aimSlot = -1, dirArr = null, mode = 0, b = ball) {
   b.frozenT = 0; b.sentBy = p;
+  if (b.hyper) { b.hyper = null; game.hyperResume = null; hyperVisEnd(); }   // parried back: the shot is over
   b.speed = parrySpeed(b.speed);
   p.parryWindow = 0; p.parryCD = 0; p.parryMode = 0; p.reachMul = 1;
   let next = null;
@@ -2760,6 +2778,7 @@ function deflect(p, aimSlot = -1, dirArr = null, mode = 0, b = ball) {
   if (mode === 1) b.boost = POWER_BOOST;
   b.vel.copy(dir).multiplyScalar(b.speed * b.boost);
   if (mode === 2 && b === ball && twin.state === 'off') splitBall(p, next, dir);
+  if (mode === 3) { p.abCD = 9999; if (b === ball && twin.state === 'off') startHyper(p, b, next); }
   parryFx(p, b, mode);
 }
 function splitBall(p, next, dir) {
@@ -2789,8 +2808,152 @@ function mergeBalls(hitter) {
   twin.state = 'off'; twin.target = null; twin.frozenT = 0; twin.predict = null;
   return tw;
 }
+/* ---------- Hypervelocity ---------- */
+// Run by whoever runs the ball. Charge: the ball hangs where it was parried while time slows for everyone and
+// the path lights up. Fly: dead straight at top speed; it swallows up to HYPER_PIERCE players it touches (each
+// gets the usual cutscene, then the shot carries on), and returns to normal homing at the arena wall.
+function startHyper(p, b, next) {
+  game.hyperSeq = (game.hyperSeq || 0) + 1;
+  const dir = V().subVectors(next.chest(V()), b.pos); dir.y = 0;
+  if (dir.lengthSq() < 1e-4) dir.set(Math.sin(p.facing), 0, Math.cos(p.facing));
+  dir.normalize();
+  b.pos.y = Math.max(b.radius + 0.4, 1.3);
+  b.vel.set(0, 0, 0);
+  b.hyper = { phase: 'charge', t: 0, dir, left: HYPER_PIERCE, shooter: p, seq: game.hyperSeq, aim: next };
+  hyperVisStart(game.hyperSeq, b.pos, dir, p);
+}
+function fireHyper(b) {
+  b.hyper.phase = 'fly'; b.hyper.t = 0;
+  b.vel.copy(b.hyper.dir).multiplyScalar(SPEED_MAX);
+  hyperVisFire();
+}
+function endHyper(b) {
+  b.hyper = null; game.hyperResume = null;
+  const r = Math.hypot(b.pos.x, b.pos.z), lim = arenaR - 1.5;
+  if (r > lim) { b.pos.x *= lim / r; b.pos.z *= lim / r; }
+  const t = botChooseTarget(null);
+  if (t) setTarget(t, b);
+  hyperVisEnd();
+}
+// someone in the way gets swallowed; if it can take more, the shot resumes after the cutscene
+function hyperEat(b, f) {
+  const h = b.hyper;
+  h.left--;
+  game.hyperResume = h.left > 0 ? { dir: h.dir.clone(), left: h.left, shooter: h.shooter, seq: h.seq, aim: h.aim } : null;
+  b.hyper = null;
+  if (!game.hyperResume) hyperVisEnd();
+  startEngulf(f, b);
+}
+function hyperStep(b, dt) {
+  const h = b.hyper;
+  if (h.phase === 'charge') { b.vel.set(0, 0, 0); return; }
+  const steps = Math.max(1, Math.ceil(SPEED_MAX * dt / 0.3)), hs = dt / steps;
+  for (let i = 0; i < steps; i++) {
+    b.pos.addScaledVector(h.dir, SPEED_MAX * hs);
+    for (const f of fighters) {
+      if (!f.active || !f.alive || f === h.shooter) continue;
+      const sd = surfaceDist(f, b), reach = parryReach(b);
+      if (sd > reach * 1.6 || f.kind === 'remote') continue;   // guests judge their own parries and hits
+      if (f.parryWindow > 0 && sd <= reach * f.reachMul) { deflect(f, -1, null, f.parryMode === 3 ? 0 : f.parryMode, b); return; }
+      if (f.shieldT > 0 && sd <= reach * 1.3) { shieldPop(f); deflect(f, -1, null, 0, b); return; }
+      if (f.ghostT > 0) continue;   // Vanish: it goes straight through
+      if (sd <= 0) { hyperEat(b, f); return; }
+    }
+    if (Math.hypot(b.pos.x, b.pos.z) > arenaR - 0.5) { endHyper(b); return; }
+  }
+}
+// the cutscene ended and the shot still has room for another: off it goes again from where it ate
+function hyperResume() {
+  const R = game.hyperResume;
+  game.hyperResume = null;
+  if (!R) return false;
+  const alive = fighters.filter(f => f.active && f.alive && f !== R.shooter);
+  if (!alive.length) { hyperVisEnd(); return false; }
+  ball.state = 'homing';
+  ball.target = R.aim && R.aim.active && R.aim.alive ? R.aim : alive[0];
+  ball.serial = ++serialCtr;
+  ball.pos.addScaledVector(R.dir, ball.radius + 1.2); ball.pos.y = Math.max(ball.radius + 0.4, 1.3);
+  ball.hyper = { phase: 'fly', t: 0, dir: R.dir, left: R.left, shooter: R.shooter, seq: R.seq, aim: R.aim };
+  ball.vel.copy(R.dir).multiplyScalar(SPEED_MAX);
+  return true;
+}
+
+// what everyone sees: slow time, a caption, a burning line along the path, a white-hot crackling ball, a boom
+const HYPER_COL = new THREE.Color('#ff4d6d');
+const hyperTex = (() => {
+  const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+  const x = c.getContext('2d');
+  const g = x.createLinearGradient(0, 0, 64, 0);
+  g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.3, 'rgba(255,255,255,0.55)'); g.addColorStop(0.5, 'rgba(255,255,255,1)'); g.addColorStop(0.7, 'rgba(255,255,255,0.55)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+  x.fillStyle = 'rgba(255,255,255,0.9)';
+  x.beginPath(); x.moveTo(14, 46); x.lineTo(32, 22); x.lineTo(50, 46); x.lineTo(50, 54); x.lineTo(32, 32); x.lineTo(14, 54); x.closePath(); x.fill();
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+})();
+const hyperLine = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: hyperTex, color: HYPER_COL.clone().multiplyScalar(4), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+hyperLine.rotation.order = 'YXZ'; hyperLine.renderOrder = 9; hyperLine.visible = false;
+scene.add(hyperLine);
+game.hyperVis = null;
+function hyperVisStart(seq, from, dir, shooter) {
+  const o = V(from.x, 0.07, from.z), d = V(dir.x, 0, dir.z).normalize();
+  // to the arena wall along the line
+  const bq = o.x * d.x + o.z * d.z, cq = o.x * o.x + o.z * o.z - arenaR * arenaR;
+  const len = Math.max(2, -bq + Math.sqrt(Math.max(0, bq * bq - cq)));
+  game.hyperVis = { seq, phase: 'charge', t: 0, from: o, dir: d, len, shooter };
+  hyperLine.visible = true;
+  hyperLine.position.copy(o).addScaledVector(d, len / 2);
+  hyperLine.rotation.set(-Math.PI / 2, Math.atan2(d.x, d.z), 0);
+  hyperLine.scale.set(2 * (ball.radius + PLAYER_R), len, 1);   // as wide as the danger really is
+  hyperTex.repeat.set(1, len / 2.2);
+  const local = shooter && shooter.kind === 'local';
+  callout('Hypervelocity', local ? 'Everyone saw that coming' : `${shooter ? shooter.name : 'Someone'} is about to fire · get off the line`, HYPER_CHARGE + 0.4, 'hyper');
+  sfx.ability('hyper', local ? 1 : 0.8);
+  game.shake = Math.max(game.shake, 0.3);
+}
+function hyperVisFire() {
+  const H = game.hyperVis;
+  if (!H || H.phase === 'fly') return;
+  H.phase = 'fly'; H.t = 0;
+  sfx.hyperBoom();
+  impactFlash(ball.pos, HYPER_COL, 3.4);
+  shockwave(ball.pos, HYPER_COL, 16, 0.6, true);
+  shockwave(ball.pos, WHITE, 9, 0.35, true);
+  game.flash = Math.max(game.flash, 0.4); game.shake = Math.max(game.shake, 0.8);
+}
+function hyperVisEnd() {
+  if (!game.hyperVis) return;
+  game.hyperVis.phase = 'end'; game.hyperVis.t = 0;
+}
+// runs every frame for everyone (the host also moves the shot from charge to fly here)
+function hyperTick(rdt) {
+  const H = game.hyperVis;
+  if (!H) { hyperLine.visible = false; return; }
+  H.t += rdt;
+  const T = game.realTime;
+  if (H.phase === 'charge') {
+    hyperLine.material.opacity = smooth(0, 0.25, H.t) * (0.8 + 0.2 * Math.sin(T * 22));
+    hyperTex.offset.y -= rdt * 3;
+    // energy rushing into the ball
+    for (let i = 0; i < 4; i++) {
+      tmp4.set(rand(-1, 1), rand(-0.5, 1), rand(-1, 1)).normalize().multiplyScalar(rand(2.5, 4.5));
+      emit({ x: ball.pos.x + tmp4.x, y: ball.pos.y + tmp4.y, z: ball.pos.z + tmp4.z, vx: -tmp4.x * 3.2, vy: -tmp4.y * 3.2, vz: -tmp4.z * 3.2,
+        life: 0.3, max: 0.3, s0: 0.2, s1: 0.03, r: 3, g: 1.2, b: 1.5, a: 1, drag: 0, grav: 0, real: true });
+    }
+    if (auth() && ball.hyper && ball.hyper.phase === 'charge' && H.t >= HYPER_CHARGE) fireHyper(ball);
+  } else if (H.phase === 'fly') {
+    hyperLine.material.opacity = 0.75 * (1 - smooth(0, 0.6, H.t));
+    hyperTex.offset.y -= rdt * 12;
+    // a streak behind the ball
+    for (let i = 0; i < 3; i++) emit({ x: ball.pos.x + rand(-0.3, 0.3), y: ball.pos.y + rand(-0.3, 0.3), z: ball.pos.z + rand(-0.3, 0.3), vx: 0, vy: 0, vz: 0,
+      life: 0.4, max: 0.4, s0: ball.vr * 1.6, s1: 0.05, r: 3, g: 1.6, b: 1.8, a: 0.7, drag: 0, grav: 0, real: true });
+  } else {
+    hyperLine.material.opacity = Math.max(0, hyperLine.material.opacity - rdt * 3);
+    if (hyperLine.material.opacity <= 0) { game.hyperVis = null; hyperLine.visible = false; }
+  }
+}
 function freezeBalls() {
-  for (const b of balls) if (b.state === 'homing' && !b.heldBy) { b.frozenT = FREEZE_T; b.vel.multiplyScalar(0.2); }
+  for (const b of balls) if (b.state === 'homing' && !b.heldBy && !b.hyper) { b.frozenT = FREEZE_T; b.vel.multiplyScalar(0.2); }
 }
 
 /* ================= abilities ================= */
@@ -2829,7 +2992,7 @@ function gunTargetBall(f) {
   if (mine) return mine;
   let best = null, bd = GUN_RANGE * GUN_RANGE;
   for (const b of balls) {
-    if (b.state !== 'homing' || b.heldBy) continue;
+    if (b.state !== 'homing' || b.heldBy || b.hyper) continue;
     const d = b.pos.distanceToSquared(f.pos);
     if (d < bd) { bd = d; best = b; }
   }
@@ -2900,7 +3063,7 @@ function teleRelease(f) {
 function netRequest(kind, arg = 0) { net.rq = [++net.rqSeq, kind, arg]; }
 const nearestChaser = f => {
   let best = null, bd = Infinity;
-  for (const b of balls) if (b.state === 'homing' && b.target !== f) { const d = b.pos.distanceToSquared(f.pos); if (d < bd) { bd = d; best = b; } }
+  for (const b of balls) if (b.state === 'homing' && b.target !== f && !b.hyper) { const d = b.pos.distanceToSquared(f.pos); if (d < bd) { bd = d; best = b; } }
   return best;
 };
 function attractBall(f) {
@@ -2914,7 +3077,7 @@ function attractBall(f) {
 function teleChoose(f) {
   let mine = null, near = null, bd = Infinity;
   for (const b of balls) {
-    if (b.state !== 'homing') continue;
+    if (b.state !== 'homing' || b.hyper) continue;
     if (b.target === f && !mine) mine = b;
     const d = b.pos.distanceToSquared(f.pos);
     if (d < bd) { bd = d; near = b; }
@@ -2999,6 +3162,7 @@ function useAbility(f) {
   }
   else if (A.id === 'power') f.abilityParry(1, 2.0);
   else if (A.id === 'split') f.abilityParry(2, 1.6);
+  else if (A.id === 'hyper') f.abilityParry(3, 1.5);
   else if (A.id === 'freeze') {
     if (game.state !== 'play') return false;
     if (auth()) freezeBalls(); else net.fzSeq++;
@@ -3250,7 +3414,7 @@ function parryFx(p, b = ball, mode = 0) {
   burst(b.pos, _fxCol, 18, 13, 0.3, false, 0.16);
   impactFlash(b.pos, _fxCol, 0.7 + b.vr * 0.5);
   if (mode) {
-    const c = new THREE.Color(ABILITIES[ABILITY_IDX[mode === 1 ? 'power' : 'split']].color);
+    const c = new THREE.Color(ABILITIES[ABILITY_IDX[mode === 1 ? 'power' : mode === 3 ? 'hyper' : 'split']].color);
     impactFlash(b.pos, c, 1.6 + b.vr);
     burst(b.pos, c, 50, 22, 0.55, false, 0.3);
     shockwave(b.pos, c, 9, 0.5, false);
@@ -3262,10 +3426,10 @@ function parryFx(p, b = ball, mode = 0) {
   game.shake = Math.max(game.shake, local ? 0.3 : 0.06);
   const vol = local ? 1 : clamp(1.2 - camera.position.distanceTo(p.pos) / 50, 0.25, 1);
   sfx.parry(vol, 0.9 + Math.min(b.speed / SPEED_MAX, 1) * 0.35);
-  if (mode) sfx.ability(mode === 1 ? 'power' : 'split', vol);
+  if (mode === 1 || mode === 2) sfx.ability(mode === 1 ? 'power' : 'split', vol);
   if (local) {
     game.combo++;
-    popup(mode === 1 ? `Power Slash · ${(b.speed * POWER_BOOST).toFixed(1)} m/s` : mode === 2 ? 'Split!' : `Parry ×${game.combo} · ${b.speed.toFixed(1)} m/s`);
+    popup(mode === 3 ? 'Hypervelocity!' : mode === 1 ? `Power Slash · ${(b.speed * POWER_BOOST).toFixed(1)} m/s` : mode === 2 ? 'Split!' : `Parry ×${game.combo} · ${b.speed.toFixed(1)} m/s`);
     profile.parries++; earn(EARN.parry);
   }
 }
@@ -3283,6 +3447,7 @@ function simBall(dt) {
         const t = botChooseTarget(null);
         if (t) setTarget(t, twin); else { twin.state = 'off'; continue; }
       }
+      if (b.hyper) { hyperStep(b, dt); continue; }
       if (b.stunT > 0) { b.stunT -= dt; b.pos.addScaledVector(b.vel, dt); continue; }
       if (b.heldBy) {
         const hd = b.heldBy;
@@ -3356,6 +3521,7 @@ function ballVisuals(dt, rdt) {
   if (!game.cine) {
     b.vr = b.radius; b.squash.set(1, 1, 1);
     ballU.uWobble.value = 0.25 + ballU.uHeat.value * 0.5; ballU.uOpacity.value = 1; ballU.uPull.value = 0;
+    if (game.hyperVis && game.hyperVis.phase === 'charge') { ballU.uWobble.value += 1.6; b.core.lerp(WHITE, 0.25); b.rim.lerp(HYPER_COL, 0.3); }
   }
   ballMesh.visible = !blobMesh.visible;
   if (blobMesh.visible) {
@@ -3604,7 +3770,8 @@ function endCine(interrupted) {
   if (auth()) {
     ball.idleT = 0.8;
     const alive = fighters.filter(f => f.active && f.alive);
-    if (alive.length <= 1 && game.state === 'play') { endRound(alive[0] || null); return; }
+    if (alive.length <= 1 && game.state === 'play') { game.hyperResume = null; hyperVisEnd(); endRound(alive[0] || null); return; }
+    if (game.hyperResume && game.state === 'play') hyperResume();
   }
   if (v.kind === 'local' && net.mode === 'solo' && game.state !== 'over') showPanel('death');
 }
@@ -3613,7 +3780,7 @@ function endCine(interrupted) {
 const AB_USE = [0, 0.25, 0.4, 0.5, 0.6];   // how often bots use their ability, by difficulty
 function botAbility() {
   // Attract and Telekinesis are left to people: they're about choosing who gets the ball
-  const pool = game.diff <= 0 ? ['dash', 'leap'] : ABILITIES.map(a => a.id).filter(id => id !== 'attract' && id !== 'tele');
+  const pool = game.diff <= 0 ? ['dash', 'leap'] : ABILITIES.map(a => a.id).filter(id => id !== 'attract' && id !== 'tele' && id !== 'hyper');
   return pool[Math.floor(Math.random() * pool.length)];
 }
 function planBotParry(b, tb = ball) {
@@ -3950,6 +4117,10 @@ function hostSnapshot() {
       : null,
     sp: twin.state !== 'off' ? [r3(split.r), r2(split.speed)] : null,
     dp: [game.deflects, game.lastParrier, game.lastMode || 0, game.lastBall || 0], cn: game.lastCine, win: game.winner,
+    hy: ball.hyper || game.hyperResume ? (() => {
+      const h = ball.hyper || game.hyperResume, from = game.hyperVis ? game.hyperVis.from : ball.pos;
+      return [h.seq, ball.hyper && ball.hyper.phase === 'charge' ? 1 : 2, r2(from.x), r2(from.z), r3(h.dir.x), r3(h.dir.z), h.shooter ? h.shooter.slot : -1];
+    })() : null,
   };
 }
 function publishPresence(rdt, force) {
@@ -4064,7 +4235,7 @@ function applySnapshot(H) {
   } : null;
   if (Array.isArray(H.dp) && num(H.dp[0]) > net.seenDeflects) {
     net.seenDeflects = num(H.dp[0]);
-    const p = fighters[num(H.dp[1], -1) | 0], mode = clamp(num(H.dp[2]) | 0, 0, 2);
+    const p = fighters[num(H.dp[1], -1) | 0], mode = clamp(num(H.dp[2]) | 0, 0, 3);
     if (p && p.active && p.kind !== 'local') {
       const b = num(H.dp[3]) === 1 && net.twin ? twin : ball;
       b.sentBy = p;
@@ -4077,6 +4248,15 @@ function applySnapshot(H) {
     const P = cineFromArray(H.cn);
     if (P && fighters[P.victim].active) beginCine(P);
   }
+  // Hypervelocity, as the host sees it
+  const hy = Array.isArray(H.hy) && H.hy.length >= 7 ? H.hy : null;
+  if (hy && num(hy[0]) > (net.seenHyper || 0)) {
+    net.seenHyper = num(hy[0]);
+    const shooter = fighters[num(hy[6], -1) | 0] || null;
+    hyperVisStart(net.seenHyper, V(num(hy[2]), 0, num(hy[3])), V(num(hy[4]), 0, num(hy[5])), shooter);
+  }
+  if (hy && num(hy[1]) === 2 && game.hyperVis && game.hyperVis.phase === 'charge') hyperVisFire();
+  if (!hy && game.hyperVis && game.hyperVis.phase !== 'end') hyperVisEnd();
   if (game.state === 'over' && num(H.win, -1) !== net.seenWin) { net.seenWin = num(H.win, -1); announceWinner(fighters[net.seenWin] || null); }
 }
 function followNetBall(dt, rdt) {
@@ -4117,7 +4297,8 @@ function clientChecks() {
   const L = localF();
   if (!L || !L.alive || game.cine) return;
   for (const b of balls) {
-    if (b.state !== 'homing' || b.target !== L || b.predict || b.heldBy || net.reported.has(b.serial)) continue;
+    const hyperFly = b === ball && game.hyperVis && game.hyperVis.phase === 'fly' && !(game.hyperVis.shooter === L);
+    if (b.state !== 'homing' || (b.target !== L && !hyperFly) || b.predict || b.heldBy || net.reported.has(b.serial)) continue;
     if (L.ghostT > 0) continue;   // invisible: it goes straight through you, the host retargets it
     const sd = surfaceDist(L, b), frozen = b.frozenT > 0;
     const parry = L.parryWindow > 0 && sd <= parryReach(b) * L.reachMul * (L.catchT > 0 ? CATCH_REACH : 1);
@@ -4151,14 +4332,15 @@ function hostReadReports(f, P) {
     if (seq > (net.prSeen.get(f.owner) || 0)) {
       net.prSeen.set(f.owner, seq);
       const sr = num(pr[0], -1), b = balls.find(x => x.state === 'homing' && x.serial === sr);
-      if (b && b.target === f && f.alive) {
+      if (b && (b.target === f || b.hyper) && f.alive) {
         const d = [num(pr[3]), num(pr[4]), num(pr[5])];
-        deflect(f, num(pr[2], -1) | 0, Math.hypot(d[0], d[1], d[2]) > 0.1 ? d : null, clamp(num(pr[6]) | 0, 0, 2), b);
+        deflect(f, num(pr[2], -1) | 0, Math.hypot(d[0], d[1], d[2]) > 0.1 ? d : null, clamp(num(pr[6]) | 0, 0, 3), b);
       }
     }
   }
   const hs = num(P.hit, -2), hb = balls.find(x => x.state === 'homing' && x.serial === hs);
-  if (hb && hb.target === f && f.alive && !(hb.frozenT > 0)) startEngulf(f, hb);
+  if (hb && hb.hyper && hb.hyper.phase === 'fly' && f.alive && f !== hb.hyper.shooter && !(f.ghostT > 0)) hyperEat(hb, f);
+  else if (hb && hb.target === f && f.alive && !(hb.frozenT > 0)) startEngulf(f, hb);
   // Frost Lock from a guest: the host runs the ball, so the host freezes it
   const fz = num(P.fz), seen = net.fzSeen.get(f.owner);
   net.fzSeen.set(f.owner, fz);
@@ -4496,8 +4678,9 @@ function feed(v) {
   setTimeout(() => d.remove(), 6000);
 }
 let calloutTimer = 0, popTimer = 0;
-function callout(big, small, dur) {
+function callout(big, small, dur, kind = '') {
   el.cBig.textContent = big; el.cSmall.textContent = small || '';
+  el.callout.classList.toggle('hyper', kind === 'hyper');
   el.callout.classList.add('on');
   clearTimeout(calloutTimer);
   calloutTimer = setTimeout(() => el.callout.classList.remove('on'), dur * 1000);
@@ -4769,7 +4952,7 @@ function renderAbilities() {
     const ico = document.createElement('span'); ico.className = 'ab-ico big'; ico.innerHTML = abilityIcon(a.id, 24);
     const info = document.createElement('div');
     const h = document.createElement('h3'); h.textContent = a.name;
-    const meta = document.createElement('span'); meta.className = 'ab-meta'; meta.textContent = `${a.cd} s cooldown${a.price ? '' : ' · starter'}`;
+    const meta = document.createElement('span'); meta.className = 'ab-meta'; meta.textContent = a.once ? 'once per round' : `${a.cd} s cooldown${a.price ? '' : ' · starter'}`;
     info.append(h, meta); top.append(ico, info);
     const d = document.createElement('p'); d.textContent = a.desc;
     // some abilities have to be earned before they can be bought
@@ -5102,8 +5285,15 @@ function updateHud(rdt) {
   setText(el.size, (ball.radius * 2).toFixed(2));
   setText(el.fed, String(ball.kills));
   const tb = L && L.alive ? ballOn(L) : null, targeted = !!tb;
-  el.warn.classList.toggle('on', !!targeted);
-  setText(el.warn, targeted && tb.frozenT > 0 ? 'Frozen · walk up and hit it' : 'Targeted');
+  // standing on a Hypervelocity line during the wind-up
+  const HV = game.hyperVis;
+  let onLine = false;
+  if (HV && HV.phase === 'charge' && L && L.alive && HV.shooter !== L) {
+    const rx = L.pos.x - HV.from.x, rz = L.pos.z - HV.from.z, along = rx * HV.dir.x + rz * HV.dir.z;
+    onLine = along > -1 && along < HV.len && Math.abs(rx * HV.dir.z - rz * HV.dir.x) < ball.radius + PLAYER_R + 0.3;
+  }
+  el.warn.classList.toggle('on', !!targeted || onLine);
+  setText(el.warn, onLine ? 'In the line of fire' : targeted && tb.frozenT > 0 ? 'Frozen · walk up and hit it' : 'Targeted');
   const cd = L ? (L.parryCD / PARRY_LOCKOUT).toFixed(3) : '1';
   el.ring.style.setProperty('--cd', cd);
   el.tParry.style.setProperty('--cd', cd);
@@ -5285,7 +5475,9 @@ function tick(fixedDt) {
   skyU.uTime.value = game.realTime;
   netTick(rdt);
   if (game.cine) updateCine(rdt);
+  hyperTick(rdt);
   let ts = game.cine ? game.timeScale : 1;
+  if (game.hyperVis && game.hyperVis.phase === 'charge') ts = Math.min(ts, HYPER_SLOW);
   if (game.hitstop > 0) { game.hitstop -= rdt; ts = Math.min(ts, 0.08); }
   const dt = rdt * ts;
   game.gameTime += dt;
