@@ -2772,6 +2772,7 @@ const net = {
   rosterKey: '', rosterT: 0, presT: 0, seenDeflects: 0, seenCine: 0, seenWin: -1, lockFailed: false,
 };
 const camCtl = { yaw: 0, pitch: 0.22, dist: 8 };
+const PITCH_UP = Math.PI / 2 - 0.02;   // straight up (just short of the exact pole, where the view would flip)
 const gp = { pos: V(0, 16, 46), look: V(0, 2.5, 0), pivot: V() };
 const D = () => DIFFS[game.diff];
 const localF = () => game.localSlot >= 0 ? fighters[game.localSlot] : null;
@@ -4927,7 +4928,7 @@ const overlayOpen = () => !$('armory').hidden || !$('reel').hidden;
 const inMatch = () => game.state !== 'menu' && $('menu').hidden && $('end').hidden && !overlayOpen();
 function look(dx, dy, sens) {
   camCtl.yaw -= dx * 0.0024 * sens;
-  camCtl.pitch = clamp(camCtl.pitch + dy * 0.002 * sens, -0.35, 1.1);
+  camCtl.pitch = clamp(camCtl.pitch + dy * 0.002 * sens, -PITCH_UP, 1.1);   // negative pitch looks up
 }
 function pressParry() {
   const L = localF();
@@ -5889,7 +5890,9 @@ function updateCamera(rdt) {
     gp.pivot.x = hp.x + cy * SHOULDER; gp.pivot.z = hp.z - sy * SHOULDER;
     gp.pivot.y = lerp(gp.pivot.y, hp.y + 1.75, damp(12, rdt));
     const fx_ = -sy * cp, fy = -spch, fz = -cy * cp;
-    tmp1.set(gp.pivot.x - fx_ * camCtl.dist, gp.pivot.y - fy * camCtl.dist, gp.pivot.z - fz * camCtl.dist);
+    // looking up, the camera slides in toward your head so the sky is in view and not the ground under you
+    const camD = camCtl.dist * (1 - 0.9 * smooth(0.25, 1.3, -camCtl.pitch));
+    tmp1.set(gp.pivot.x - fx_ * camD, gp.pivot.y - fy * camD, gp.pivot.z - fz * camD);
     tmp1.y = Math.max(tmp1.y, 0.4);
     gp.pos.lerp(tmp1, damp(35, rdt));
     tmp2.set(gp.pivot.x + fx_ * 12, gp.pivot.y + fy * 12, gp.pivot.z + fz * 12);
